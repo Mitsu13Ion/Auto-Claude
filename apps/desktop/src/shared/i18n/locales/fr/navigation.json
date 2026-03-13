@@ -31,7 +31,7 @@
     "help": "Aide & Feedback"
   },
   "messages": {
-    "initializeToCreateTasks": "Initialisez Aperant pour créer des tâches"
+    "initializeToCreateTasks": "Initialisez RiverCode pour créer des tâches"
   },
   "updateBanner": {
     "title": "Mise à jour disponible",

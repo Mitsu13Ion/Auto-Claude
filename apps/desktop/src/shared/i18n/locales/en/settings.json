@@ -7,7 +7,7 @@
   "sections": {
     "appearance": {
       "title": "Appearance",
-      "description": "Customize how Aperant looks"
+      "description": "Customize how RiverCode looks"
     },
     "display": {
       "title": "Display",
@@ -35,7 +35,7 @@
     },
     "updates": {
       "title": "Updates",
-      "description": "Aperant updates"
+      "description": "RiverCode updates"
     },
     "notifications": {
       "title": "Notifications",
@@ -209,7 +209,7 @@
     "otherAgentSettingsDescription": "Additional agent configuration options",
     "agentFramework": "Agent Framework",
     "agentFrameworkDescription": "The coding framework used for autonomous tasks",
-    "agentFrameworkAutoClaude": "Aperant",
+    "agentFrameworkAutoClaude": "RiverCode",
     "aiTerminalNaming": "AI Terminal Naming",
     "aiTerminalNamingDescription": "Automatically name terminals based on commands (uses AI Naming model)",
     "featureModelSettings": "Feature Model Settings",
@@ -233,6 +233,11 @@
     "claudePath": "Claude CLI Path",
     "claudePathDescription": "Path to Claude CLI executable (leave empty for auto-detection)",
     "claudePathPlaceholder": "claude (default)",
+    "tokfEnabled": "Enable tokf for agents",
+    "tokfEnabledDescription": "Run Bash tool commands through tokf so command output is filtered before it reaches the model",
+    "tokfPath": "tokf Path",
+    "tokfPathDescription": "Path to the tokf executable (leave empty for auto-detection)",
+    "tokfPathPlaceholder": "tokf (default)",
     "detectedPath": "Auto-detected",
     "detectedVersion": "Version",
     "detectedSource": "Source",
@@ -244,7 +249,7 @@
     "sourceBundled": "Bundled",
     "sourceFallback": "Fallback",
     "notDetected": "Not detected",
-    "autoClaudePath": "Aperant Path",
+    "autoClaudePath": "RiverCode Path",
     "autoClaudePathDescription": "Relative path to auto-claude directory in projects",
     "autoClaudePathPlaceholder": "auto-claude (default)",
     "autoNameTerminals": "Automatically name terminals",
@@ -252,7 +257,7 @@
   },
   "theme": {
     "title": "Appearance",
-    "description": "Customize how Aperant looks",
+    "description": "Customize how RiverCode looks",
     "mode": "Mode",
     "modeDescription": "Choose between light and dark themes",
     "light": "Light",
@@ -270,14 +275,14 @@
     "tabTerminalFonts": "Terminal Fonts",
     "ide": {
       "label": "Preferred IDE",
-      "description": "Aperant will open worktrees in this editor",
+      "description": "RiverCode will open worktrees in this editor",
       "placeholder": "Select IDE...",
       "customPath": "Custom IDE Path",
       "customPathPlaceholder": "/path/to/your/ide"
     },
     "terminal": {
       "label": "Preferred Terminal",
-      "description": "Aperant will open terminal sessions here",
+      "description": "RiverCode will open terminal sessions here",
       "placeholder": "Select terminal...",
       "customPath": "Custom Terminal Path",
       "customPathPlaceholder": "/path/to/your/terminal"
@@ -305,7 +310,7 @@
   },
   "updates": {
     "title": "Updates",
-    "description": "Manage Aperant updates",
+    "description": "Manage RiverCode updates",
     "appUpdateReady": "App Update Ready",
     "newVersion": "New Version",
     "released": "Released",
@@ -321,8 +326,10 @@
     "viewRelease": "View full release on GitHub",
     "unableToCheck": "Unable to check for updates",
     "checkForUpdates": "Check for Updates",
+    "updaterDisabled": "App updater disabled",
+    "updaterDisabledDescription": "RiverCode self-updates are disabled in this build. Update the application manually from your controlled release workflow.",
     "autoUpdateProjects": "Auto-Update Projects",
-    "autoUpdateProjectsDescription": "Automatically update Aperant in projects when a new version is available",
+    "autoUpdateProjectsDescription": "Automatically update RiverCode in projects when a new version is available",
     "betaUpdates": "Beta Updates",
     "betaUpdatesDescription": "Receive pre-release beta versions with new features (may be less stable)",
     "stableDowngradeAvailable": "Stable Version Available",
@@ -330,7 +337,7 @@
     "stableVersion": "Stable Version",
     "downloadStableVersion": "Download Stable Version",
     "readOnlyVolumeTitle": "Cannot Install from Disk Image",
-    "readOnlyVolumeDescription": "Aperant is running from a read-only disk image (DMG). Please drag the app to your Applications folder and relaunch it from there to install updates.",
+    "readOnlyVolumeDescription": "RiverCode is running from a read-only disk image (DMG). Please drag the app to your Applications folder and relaunch it from there to install updates.",
     "downloadError": "Failed to download update"
   },
   "notifications": {
@@ -793,6 +800,7 @@
       "oauthFallbackDescription": "If browser login doesn't work, use the embedded terminal",
       "oauthNameRequired": "Enter an account name before authenticating",
       "modelsDescription": "Add the model IDs available at this endpoint. These will appear in the model selector.",
+      "modelsDiscoveryHint": "Enter an API key to fetch the available models.",
       "fields": {
         "name": "Account Name",
         "apiKey": "API Key",
@@ -810,11 +818,7 @@
       "toast": {
         "added": "Account added",
         "updated": "Account updated",
-        "error": "Failed to save account",
-        "duplicateEmail": "This email is already registered as \"{{existingName}}\"",
-        "createProfileFailed": "Failed to create profile",
-        "authPrepareFailed": "Failed to prepare terminal",
-        "unexpectedError": "Unexpected error"
+        "error": "Failed to save account"
       }
     },
     "toast": {
@@ -855,7 +859,7 @@
     "description": "Access logs and debug information for troubleshooting",
     "errorReporting": {
       "label": "Anonymous Error Reporting",
-      "description": "Send crash reports to help improve Aperant. No personal data or code is collected."
+      "description": "Send crash reports to help improve RiverCode. No personal data or code is collected."
     },
     "openLogsFolder": "Open Logs Folder",
     "copyDebugInfo": "Copy Debug Info",
@@ -885,7 +889,7 @@
     "noProjectSelected": "No Project Selected",
     "noProjectSelectedDescription": "Select a project from the dropdown to view and configure MCP servers.",
     "projectNotInitialized": "Project Not Initialized",
-    "projectNotInitializedDescription": "Initialize Aperant for this project to configure MCP servers.",
+    "projectNotInitializedDescription": "Initialize RiverCode for this project to configure MCP servers.",
     "browserAutomation": "Browser Automation (QA agents only)",
     "alwaysEnabled": "always enabled",
     "addServer": "Add Server",
@@ -922,7 +926,7 @@
         "description": "Web browser automation for testing"
       },
       "autoClaude": {
-        "name": "Aperant Tools",
+        "name": "RiverCode Tools",
         "description": "Build progress tracking"
       }
     },

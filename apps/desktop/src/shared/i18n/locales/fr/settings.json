@@ -7,7 +7,7 @@
   "sections": {
     "appearance": {
       "title": "Apparence",
-      "description": "Personnalisez l'apparence de Aperant"
+      "description": "Personnalisez l'apparence de RiverCode"
     },
     "display": {
       "title": "Affichage",
@@ -35,7 +35,7 @@
     },
     "updates": {
       "title": "Mises à jour",
-      "description": "Mises à jour Aperant"
+      "description": "Mises à jour RiverCode"
     },
     "notifications": {
       "title": "Notifications",
@@ -209,7 +209,7 @@
     "otherAgentSettingsDescription": "Options de configuration supplémentaires de l'agent",
     "agentFramework": "Framework de l'agent",
     "agentFrameworkDescription": "Le framework de codage utilisé pour les tâches autonomes",
-    "agentFrameworkAutoClaude": "Aperant",
+    "agentFrameworkAutoClaude": "RiverCode",
     "aiTerminalNaming": "Nommage IA des terminaux",
     "aiTerminalNamingDescription": "Nommer automatiquement les terminaux en fonction des commandes (utilise le modèle de nommage IA)",
     "featureModelSettings": "Paramètres du modèle de fonctionnalité",
@@ -233,6 +233,11 @@
     "claudePath": "Chemin Claude CLI",
     "claudePathDescription": "Chemin vers l'exécutable Claude CLI (laisser vide pour détection automatique)",
     "claudePathPlaceholder": "claude (par défaut)",
+    "tokfEnabled": "Activer tokf pour les agents",
+    "tokfEnabledDescription": "Exécuter les commandes du Bash tool via tokf pour filtrer la sortie avant qu'elle n'arrive au modèle",
+    "tokfPath": "Chemin tokf",
+    "tokfPathDescription": "Chemin vers l'exécutable tokf (laisser vide pour détection automatique)",
+    "tokfPathPlaceholder": "tokf (par défaut)",
     "detectedPath": "Détecté automatiquement",
     "detectedVersion": "Version",
     "detectedSource": "Source",
@@ -244,7 +249,7 @@
     "sourceBundled": "Intégré",
     "sourceFallback": "Valeur par défaut",
     "notDetected": "Non détecté",
-    "autoClaudePath": "Chemin Aperant",
+    "autoClaudePath": "Chemin RiverCode",
     "autoClaudePathDescription": "Chemin relatif vers le répertoire auto-claude dans les projets",
     "autoClaudePathPlaceholder": "auto-claude (par défaut)",
     "autoNameTerminals": "Nommer automatiquement les terminaux",
@@ -252,7 +257,7 @@
   },
   "theme": {
     "title": "Apparence",
-    "description": "Personnalisez l'apparence de Aperant",
+    "description": "Personnalisez l'apparence de RiverCode",
     "mode": "Mode",
     "modeDescription": "Choisir entre les thèmes clair et sombre",
     "light": "Clair",
@@ -270,14 +275,14 @@
     "tabTerminalFonts": "Polices de terminal",
     "ide": {
       "label": "IDE préféré",
-      "description": "Aperant ouvrira les worktrees dans cet éditeur",
+      "description": "RiverCode ouvrira les worktrees dans cet éditeur",
       "placeholder": "Sélectionner un IDE...",
       "customPath": "Chemin IDE personnalisé",
       "customPathPlaceholder": "/chemin/vers/votre/ide"
     },
     "terminal": {
       "label": "Terminal préféré",
-      "description": "Aperant ouvrira les sessions terminal ici",
+      "description": "RiverCode ouvrira les sessions terminal ici",
       "placeholder": "Sélectionner un terminal...",
       "customPath": "Chemin terminal personnalisé",
       "customPathPlaceholder": "/chemin/vers/votre/terminal"
@@ -305,7 +310,7 @@
   },
   "updates": {
     "title": "Mises à jour",
-    "description": "Gérer les mises à jour de Aperant",
+    "description": "Gérer les mises à jour de RiverCode",
     "appUpdateReady": "Mise à jour de l'app prête",
     "newVersion": "Nouvelle version",
     "released": "Publiée le",
@@ -321,8 +326,10 @@
     "viewRelease": "Voir la version complète sur GitHub",
     "unableToCheck": "Impossible de vérifier les mises à jour",
     "checkForUpdates": "Vérifier les mises à jour",
+    "updaterDisabled": "App-updater désactivé",
+    "updaterDisabledDescription": "Les mises à jour automatiques de l’application RiverCode sont désactivées dans ce build. Mets l’application à jour manuellement via ton workflow de release contrôlé.",
     "autoUpdateProjects": "Mise à jour automatique des projets",
-    "autoUpdateProjectsDescription": "Mettre à jour automatiquement Aperant dans les projets quand une nouvelle version est disponible",
+    "autoUpdateProjectsDescription": "Mettre à jour automatiquement RiverCode dans les projets quand une nouvelle version est disponible",
     "betaUpdates": "Mises à jour bêta",
     "betaUpdatesDescription": "Recevoir les versions bêta pré-release avec de nouvelles fonctionnalités (peut être moins stable)",
     "stableDowngradeAvailable": "Version stable disponible",
@@ -330,7 +337,7 @@
     "stableVersion": "Version stable",
     "downloadStableVersion": "Télécharger la version stable",
     "readOnlyVolumeTitle": "Impossible d'installer depuis l'image disque",
-    "readOnlyVolumeDescription": "Aperant s'exécute depuis une image disque en lecture seule (DMG). Veuillez glisser l'application dans votre dossier Applications et la relancer depuis cet emplacement pour installer les mises à jour.",
+    "readOnlyVolumeDescription": "RiverCode s'exécute depuis une image disque en lecture seule (DMG). Veuillez glisser l'application dans votre dossier Applications et la relancer depuis cet emplacement pour installer les mises à jour.",
     "downloadError": "Échec du téléchargement de la mise à jour"
   },
   "notifications": {
@@ -793,6 +800,7 @@
       "oauthFallbackDescription": "Si la connexion par navigateur ne fonctionne pas, utilisez le terminal intégré",
       "oauthNameRequired": "Entrez un nom de compte avant de vous authentifier",
       "modelsDescription": "Ajoutez les identifiants de modèles disponibles sur cet endpoint. Ils apparaîtront dans le sélecteur de modèles.",
+      "modelsDiscoveryHint": "Saisissez une clé API pour récupérer les modèles disponibles.",
       "fields": {
         "name": "Nom du compte",
         "apiKey": "Clé API",
@@ -810,11 +818,7 @@
       "toast": {
         "added": "Compte ajouté",
         "updated": "Compte mis à jour",
-        "error": "Échec de l'enregistrement du compte",
-        "duplicateEmail": "Cet e-mail est déjà enregistré sous \"{{existingName}}\"",
-        "createProfileFailed": "Échec de la création du profil",
-        "authPrepareFailed": "Échec de la préparation du terminal",
-        "unexpectedError": "Erreur inattendue"
+        "error": "Échec de l'enregistrement du compte"
       }
     },
     "toast": {
@@ -855,7 +859,7 @@
     "description": "Accédez aux logs et informations de débogage pour le dépannage",
     "errorReporting": {
       "label": "Rapports d'erreurs anonymes",
-      "description": "Envoyer des rapports de crash pour améliorer Aperant. Aucune donnée personnelle ni code n'est collecté."
+      "description": "Envoyer des rapports de crash pour améliorer RiverCode. Aucune donnée personnelle ni code n'est collecté."
     },
     "openLogsFolder": "Ouvrir le dossier des logs",
     "copyDebugInfo": "Copier les infos de débogage",
@@ -885,7 +889,7 @@
     "noProjectSelected": "Aucun projet sélectionné",
     "noProjectSelectedDescription": "Sélectionnez un projet dans le menu déroulant pour voir et configurer les serveurs MCP.",
     "projectNotInitialized": "Projet non initialisé",
-    "projectNotInitializedDescription": "Initialisez Aperant pour ce projet pour configurer les serveurs MCP.",
+    "projectNotInitializedDescription": "Initialisez RiverCode pour ce projet pour configurer les serveurs MCP.",
     "browserAutomation": "Automatisation du navigateur (agents QA uniquement)",
     "alwaysEnabled": "toujours activé",
     "addServer": "Ajouter un serveur",
@@ -922,7 +926,7 @@
         "description": "Automatisation du navigateur web pour les tests"
       },
       "autoClaude": {
-        "name": "Outils Aperant",
+        "name": "Outils RiverCode",
         "description": "Suivi de la progression du build"
       }
     },

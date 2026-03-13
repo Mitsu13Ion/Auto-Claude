@@ -16,9 +16,11 @@
 
 import * as path from 'path';
 import * as os from 'os';
+import { existsSync } from 'fs';
 import { isLinux } from './platform';
 
-const APP_NAME = 'auto-claude';
+const APP_NAME = 'rivercode';
+const LEGACY_APP_NAME = 'auto-claude';
 
 /**
  * Get the XDG config home directory
@@ -46,26 +48,53 @@ export function getXdgCacheHome(): string {
 
 /**
  * Get the application config directory
- * Returns the XDG-compliant path for storing configuration files
+ * Returns the XDG-compliant path for storing configuration files.
+ * Falls back to the legacy 'auto-claude' path if it exists and the new path doesn't.
  */
 export function getAppConfigDir(): string {
-  return path.join(getXdgConfigHome(), APP_NAME);
+  const newPath = path.join(getXdgConfigHome(), APP_NAME);
+  if (existsSync(newPath)) {
+    return newPath;
+  }
+  const legacyPath = path.join(getXdgConfigHome(), LEGACY_APP_NAME);
+  if (existsSync(legacyPath)) {
+    return legacyPath;
+  }
+  return newPath;
 }
 
 /**
  * Get the application data directory
- * Returns the XDG-compliant path for storing application data
+ * Returns the XDG-compliant path for storing application data.
+ * Falls back to the legacy 'auto-claude' path if it exists and the new path doesn't.
  */
 export function getAppDataDir(): string {
-  return path.join(getXdgDataHome(), APP_NAME);
+  const newPath = path.join(getXdgDataHome(), APP_NAME);
+  if (existsSync(newPath)) {
+    return newPath;
+  }
+  const legacyPath = path.join(getXdgDataHome(), LEGACY_APP_NAME);
+  if (existsSync(legacyPath)) {
+    return legacyPath;
+  }
+  return newPath;
 }
 
 /**
  * Get the application cache directory
- * Returns the XDG-compliant path for storing cache files
+ * Returns the XDG-compliant path for storing cache files.
+ * Falls back to the legacy 'auto-claude' path if it exists and the new path doesn't.
  */
 export function getAppCacheDir(): string {
-  return path.join(getXdgCacheHome(), APP_NAME);
+  const newPath = path.join(getXdgCacheHome(), APP_NAME);
+  if (existsSync(newPath)) {
+    return newPath;
+  }
+  const legacyPath = path.join(getXdgCacheHome(), LEGACY_APP_NAME);
+  if (existsSync(legacyPath)) {
+    return legacyPath;
+  }
+  return newPath;
 }
 
 /**
@@ -77,8 +106,9 @@ export function getMemoriesDir(): string {
   const legacyPath = path.join(os.homedir(), '.auto-claude', 'memories');
 
   // On Linux with XDG variables set (AppImage, Flatpak, Snap), use XDG path
+  // Uses LEGACY_APP_NAME to keep memories data in the same location for backward compatibility
   if (isLinux() && (process.env.XDG_DATA_HOME || process.env.APPIMAGE || process.env.SNAP || process.env.FLATPAK_ID)) {
-    return path.join(getXdgDataHome(), APP_NAME, 'memories');
+    return path.join(getXdgDataHome(), LEGACY_APP_NAME, 'memories');
   }
 
   // Default to legacy path for backwards compatibility

@@ -14,7 +14,7 @@ import { transformRoadmapFromSnakeCase } from '../ipc-handlers/roadmap/transform
 import type { RawIdea } from '../ipc-handlers/ideation/types';
 import { debounce } from '../utils/debounce';
 import { writeFileWithRetry } from '../utils/atomic-file';
-import { runIdeation, IDEATION_TYPES } from '../ai/runners/ideation';
+import { runIdeation, IDEATION_TYPES, filterIdeasWithInvalidPaths } from '../ai/runners/ideation';
 import type { IdeationType, IdeationStreamEvent } from '../ai/runners/ideation';
 import { runRoadmapGeneration } from '../ai/runners/roadmap';
 import type { RoadmapStreamEvent } from '../ai/runners/roadmap';
@@ -274,13 +274,15 @@ export class AgentQueueManager {
           completedTypes.add(ideationType);
           debugLog('[Agent Queue] Ideation type completed:', { projectId, ideationType });
 
-          // Load and emit type-specific ideas
+          // Load, validate, and emit type-specific ideas
           const typeFilePath = path.join(outputDir, `${ideationType}_ideas.json`);
           try {
             const content = await fsPromises.readFile(typeFilePath, 'utf-8');
             const data: Record<string, RawIdea[]> = JSON.parse(content);
             const rawIdeas: RawIdea[] = data[ideationType] || [];
-            const ideas: Idea[] = rawIdeas.map(transformIdeaFromSnakeCase);
+            // Filter out ideas with hallucinated file paths (RiverCode feature)
+            const validatedIdeas = filterIdeasWithInvalidPaths(rawIdeas, projectPath);
+            const ideas: Idea[] = validatedIdeas.map(transformIdeaFromSnakeCase);
             this.emitter.emit('ideation-type-complete', projectId, ideationType, ideas);
           } catch (err) {
             debugError('[Agent Queue] Failed to load ideas for type:', ideationType, err);

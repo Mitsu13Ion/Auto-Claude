@@ -12,13 +12,14 @@
 
 import { streamText, stepCountIs } from 'ai';
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { createSimpleClient } from '../client/factory';
 import { buildToolRegistry } from '../tools/build-registry';
 import type { ToolContext } from '../tools/types';
 import type { ModelShorthand, ThinkingLevel } from '../config/types';
 import type { SecurityProfile } from '../security/bash-validator';
+import { debugLog } from '../../../shared/utils/debug-logger';
 
 // =============================================================================
 // Constants
@@ -55,6 +56,85 @@ const IDEATION_TYPE_PROMPTS: Record<IdeationType, string> = {
   performance_optimizations: 'ideation_performance.md',
   code_quality: 'ideation_code_quality.md',
 };
+
+// =============================================================================
+// File Path Validation
+// =============================================================================
+
+/**
+ * Keys in raw idea objects that may contain file paths.
+ * Covers both snake_case (Python backend) and camelCase (TypeScript) variants.
+ */
+const FILE_PATH_KEYS = [
+  'affected_files',
+  'affectedFiles',
+  'affected_components',
+  'affectedComponents',
+  'affected_areas',
+  'affectedAreas',
+] as const;
+
+/**
+ * Filter out ideas where more than half of the referenced file paths don't
+ * exist in the project. This catches hallucinated file paths from AI output
+ * while tolerating minor path variations.
+ *
+ * Ideas with no file path references are kept as-is.
+ *
+ * @param ideas - Raw idea objects (untyped, straight from JSON parse)
+ * @param projectDir - Absolute path to the project root
+ * @returns Filtered array of ideas with valid file paths
+ */
+// biome-ignore lint/suspicious/noExplicitAny: ideas come from untyped JSON parse
+export function filterIdeasWithInvalidPaths(ideas: any[], projectDir: string): any[] {
+  // biome-ignore lint/suspicious/noExplicitAny: matches function signature
+  const filtered: any[] = [];
+  let removedCount = 0;
+
+  for (const idea of ideas) {
+    // Collect all file paths from known keys
+    const allPaths: string[] = [];
+    for (const key of FILE_PATH_KEYS) {
+      const value = idea[key];
+      if (Array.isArray(value)) {
+        for (const entry of value) {
+          if (typeof entry === 'string') {
+            allPaths.push(entry);
+          }
+        }
+      } else if (typeof value === 'string') {
+        allPaths.push(value);
+      }
+    }
+
+    // No file paths to validate — keep the idea
+    if (allPaths.length === 0) {
+      filtered.push(idea);
+      continue;
+    }
+
+    // Check how many paths actually exist
+    let validCount = 0;
+    for (const filePath of allPaths) {
+      if (existsSync(resolve(projectDir, filePath))) {
+        validCount++;
+      }
+    }
+
+    // Keep the idea if at least half of the paths are valid
+    if (validCount >= allPaths.length / 2) {
+      filtered.push(idea);
+    } else {
+      removedCount++;
+    }
+  }
+
+  if (removedCount > 0) {
+    debugLog(`[Ideation] Filtered ${removedCount} ideas with invalid file paths`);
+  }
+
+  return filtered;
+}
 
 // =============================================================================
 // Types

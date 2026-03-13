@@ -28,6 +28,10 @@ import type { AppUpdateInfo } from '../shared/types';
 import { compareVersions } from './updater/version-manager';
 import { isMacOS } from './platform';
 
+// RiverCode: Auto-updater disabled to prevent overwriting with upstream releases.
+// Updates are managed manually via scripts/upstream-sync.py.
+const RIVERCODE_UPDATER_DISABLED = true;
+
 // GitHub repo info for API calls
 const GITHUB_OWNER = 'AndyMik90';
 const GITHUB_REPO = 'Aperant';
@@ -201,6 +205,13 @@ let intentionalDowngrade = false;
  * @param betaUpdates - Whether to receive beta/pre-release updates
  */
 export function initializeAppUpdater(window: BrowserWindow, betaUpdates = false): void {
+  // RiverCode: Auto-updater disabled to prevent overwriting with upstream releases.
+  // Updates are managed manually via scripts/upstream-sync.py.
+  if (RIVERCODE_UPDATER_DISABLED) {
+    console.warn('[app-updater] Auto-updater is disabled for RiverCode fork');
+    return;
+  }
+
   mainWindow = window;
 
   // Set update channel based on user preference

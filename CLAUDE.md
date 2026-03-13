@@ -4,7 +4,72 @@ This file provides guidance to Claude Code when working with this repository.
 
 Auto Claude is an autonomous multi-agent coding framework that plans, builds, and validates software for you. It's a TypeScript-first Electron desktop application with a self-contained AI agent layer (Vercel AI SDK v6). A lightweight Python sidecar provides the optional Graphiti memory system.
 
+> **Note:** RiverCode is a customized fork of [Auto Claude](https://github.com/AndyMik90/Auto-Claude). Internal data paths (`.auto-claude/`) and module names remain unchanged from upstream.
+
 > **Deep-dive reference:** [ARCHITECTURE.md](shared_docs/ARCHITECTURE.md) | **Frontend contributing:** [apps/desktop/CONTRIBUTING.md](apps/desktop/CONTRIBUTING.md)
+
+## RiverCode Fork Principles
+
+This section documents the architectural decisions specific to RiverCode. Follow these rules strictly to avoid breaking upstream compatibility and minimize merge conflicts.
+
+### Remotes & Branch Strategy
+
+| Remote | URL | Purpose |
+|--------|-----|---------|
+| `origin` | `https://git.riverhelm.fr/Cidalex/riverproject` | Primary (GitLab) |
+| `fork` | `https://github.com/Mitsu13Ion/Auto-Claude.git` | GitHub mirror |
+| `upstream` | `https://github.com/AndyMik90/Auto-Claude.git` | Upstream source |
+
+- **Main branch:** `rivercode/main` — all development happens here
+- **Upstream sync:** `python scripts/upstream-sync.py` — interactive cherry-pick from `upstream/develop`
+- Sync state is persisted in `.rivercode/upstream-sync.json` (gitignored)
+
+### What NOT to touch (upstream conflict avoidance)
+
+These items are deliberately left as-is to minimize merge conflicts when cherry-picking from upstream:
+
+| Item | Reason |
+|------|--------|
+| `.auto-claude/` directory path | Hundreds of references across the codebase; renaming creates massive conflicts |
+| Credential service names | `Claude Code-credentials` — changing breaks OS keychain entries |
+| `.gitignore` entries with `auto-claude` | Internal data path, not user-facing branding |
+| `.github/workflows/` | Inert on GitLab; touching them creates unnecessary diffs |
+| `apps/desktop/prompts/*.md` | Agent system prompts — internal AI instructions, not user branding |
+
+### What IS rebranded
+
+| Item | Old value | New value |
+|------|-----------|-----------|
+| `package.json` name | `auto-claude` | `rivercode` |
+| `apps/desktop/package.json` appId | `com.autoclaude.ui` | `fr.riverhelm.rivercode` |
+| `apps/desktop/package.json` productName | `Auto-Claude` | `RiverCode` |
+| `apps/desktop/package.json` publish | GitHub provider | `[]` (disabled) |
+| `app.setName()` in `index.ts` | `Auto Claude` | `RiverCode` |
+| `setAppUserModelId()` in `index.ts` | `com.autoclaude.ui` | `fr.riverhelm.rivercode` |
+| `APP_NAME` in `config-paths.ts` | `auto-claude` | `rivercode` (with legacy fallback) |
+| `<title>` in `index.html` | `Auto Claude` | `RiverCode` |
+| i18n locales (en+fr) | `Auto Claude` | `RiverCode` |
+| Auto-updater | Active (checks GitHub) | Disabled (`RIVERCODE_UPDATER_DISABLED`) |
+| All `.md` documentation | `Auto Claude` | `RiverCode` (except upstream references) |
+
+### Config path migration
+
+`config-paths.ts` uses `APP_NAME = 'rivercode'` but falls back to the legacy `auto-claude` directories if the new ones don't exist yet. This ensures existing installations keep working:
+
+```
+~/.config/rivercode/    ← new (preferred)
+~/.config/auto-claude/  ← legacy fallback
+```
+
+### Upstream sync workflow
+
+```
+Frequency  | Action
+-----------|----------------------------------------------------------
+Daily      | Develop on rivercode/main, push to origin
+Weekly     | python scripts/upstream-sync.py → cherry-pick → test → push
+Major      | Evaluate rebase vs continued cherry-pick
+```
 
 ## Product Overview
 

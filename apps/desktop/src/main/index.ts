@@ -70,6 +70,7 @@ import { isProfileAuthenticated } from './claude-profile/profile-utils';
 import { isMacOS, isWindows } from './platform';
 import { ptyDaemonClient } from './terminal/pty-daemon-client';
 import type { AppSettings, AuthFailureInfo } from '../shared/types';
+import { APP_UPDATER_DISABLED } from '../shared/constants/config';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Migrate userData from old app name (auto-claude-ui → aperant)
@@ -390,10 +391,10 @@ function createWindow(): void {
 }
 
 // Set app name before ready (for dock tooltip on macOS in dev mode)
-app.setName('Aperant');
+app.setName('RiverCode');
 if (isMacOS()) {
   // Force the name to appear in dock on macOS
-  app.name = 'Aperant';
+  app.name = 'RiverCode';
 }
 
 // Fix Windows GPU cache permission errors (0x5 Access Denied)
@@ -406,7 +407,7 @@ if (isWindows()) {
 // Initialize the application
 app.whenReady().then(() => {
   // Set app user model id for Windows
-  electronApp.setAppUserModelId('com.aperant.app');
+  electronApp.setAppUserModelId('fr.riverhelm.rivercode');
 
   // Clear cache on Windows to prevent permission errors from stale cache
   if (isWindows()) {
@@ -620,7 +621,6 @@ app.whenReady().then(() => {
     });
 
   if (mainWindow) {
-    // Log debug mode status
     const isDebugMode = process.env.DEBUG === 'true';
     if (isDebugMode) {
       console.warn('[main] ========================================');
@@ -628,26 +628,30 @@ app.whenReady().then(() => {
       console.warn('[main] ========================================');
     }
 
-    // Initialize app auto-updater (only in production, or when DEBUG_UPDATER is set)
-    const forceUpdater = process.env.DEBUG_UPDATER === 'true';
-    if (app.isPackaged || forceUpdater) {
-      // Load settings to get beta updates preference
-      const settings = loadSettingsSync();
-      const betaUpdates = settings.betaUpdates ?? false;
-
-      initializeAppUpdater(mainWindow, betaUpdates);
-      console.warn('[main] App auto-updater initialized');
-      console.warn(`[main] Beta updates: ${betaUpdates ? 'enabled' : 'disabled'}`);
-      if (forceUpdater && !app.isPackaged) {
-        console.warn('[main] Updater forced in dev mode via DEBUG_UPDATER=true');
-        console.warn('[main] Note: Updates won\'t actually work in dev mode');
-      }
+    if (APP_UPDATER_DISABLED) {
+      console.warn('[main] ========================================');
+      console.warn('[main] App auto-updater DISABLED for RiverCode');
+      console.warn('[main] ========================================');
     } else {
-      console.warn('[main] ========================================');
-      console.warn('[main] App auto-updater DISABLED (development mode)');
-      console.warn('[main] To test updater logging, set DEBUG_UPDATER=true');
-      console.warn('[main] Note: Actual updates only work in packaged builds');
-      console.warn('[main] ========================================');
+      const forceUpdater = process.env.DEBUG_UPDATER === 'true';
+      if (app.isPackaged || forceUpdater) {
+        const settings = loadSettingsSync();
+        const betaUpdates = settings.betaUpdates ?? false;
+
+        initializeAppUpdater(mainWindow, betaUpdates);
+        console.warn('[main] App auto-updater initialized');
+        console.warn(`[main] Beta updates: ${betaUpdates ? 'enabled' : 'disabled'}`);
+        if (forceUpdater && !app.isPackaged) {
+          console.warn('[main] Updater forced in dev mode via DEBUG_UPDATER=true');
+          console.warn('[main] Note: Updates won\'t actually work in dev mode');
+        }
+      } else {
+        console.warn('[main] ========================================');
+        console.warn('[main] App auto-updater DISABLED (development mode)');
+        console.warn('[main] To test updater logging, set DEBUG_UPDATER=true');
+        console.warn('[main] Note: Actual updates only work in packaged builds');
+        console.warn('[main] ========================================');
+      }
     }
   }
 

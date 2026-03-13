@@ -877,82 +877,108 @@ export function App() {
             {selectedProject ? (
               <>
                 {activeView === 'kanban' && (
-                  <KanbanBoard
-                    tasks={tasks}
-                    onTaskClick={handleTaskClick}
-                    onNewTaskClick={() => setIsNewTaskDialogOpen(true)}
-                    onRefresh={handleRefreshTasks}
-                    isRefreshing={isRefreshingTasks}
-                  />
+                  <ErrorBoundary fallback={<div className="p-4 text-red-500">Error loading Kanban Board</div>}>
+                    <KanbanBoard
+                      tasks={tasks}
+                      onTaskClick={handleTaskClick}
+                      onNewTaskClick={() => setIsNewTaskDialogOpen(true)}
+                      onRefresh={handleRefreshTasks}
+                      isRefreshing={isRefreshingTasks}
+                    />
+                  </ErrorBoundary>
                 )}
                 {/* TerminalGrid is always mounted but hidden when not active to preserve terminal state */}
                 <div className={activeView === 'terminals' ? 'h-full' : 'hidden'}>
-                  <TerminalGrid
-                    projectPath={selectedProject?.path}
-                    onNewTaskClick={() => setIsNewTaskDialogOpen(true)}
-                    isActive={activeView === 'terminals'}
-                  />
+                  <ErrorBoundary fallback={<div className="p-4 text-red-500">Error loading Terminal Grid</div>}>
+                    <TerminalGrid
+                      projectPath={selectedProject?.path}
+                      onNewTaskClick={() => setIsNewTaskDialogOpen(true)}
+                      isActive={activeView === 'terminals'}
+                    />
+                  </ErrorBoundary>
                 </div>
                 {activeView === 'roadmap' && (activeProjectId || selectedProjectId) && (
-                  <Roadmap projectId={activeProjectId || selectedProjectId!} onGoToTask={handleGoToTask} />
+                  <ErrorBoundary fallback={<div className="p-4 text-red-500">Error loading Roadmap</div>}>
+                    <Roadmap projectId={activeProjectId || selectedProjectId!} onGoToTask={handleGoToTask} />
+                  </ErrorBoundary>
                 )}
                 {activeView === 'context' && (activeProjectId || selectedProjectId) && (
-                  <ErrorBoundary>
+                  <ErrorBoundary fallback={<div className="p-4 text-red-500">Error loading Context</div>}>
                     <Context projectId={activeProjectId || selectedProjectId!} />
                   </ErrorBoundary>
                 )}
                 {activeView === 'ideation' && (activeProjectId || selectedProjectId) && (
-                  <Ideation projectId={activeProjectId || selectedProjectId!} onGoToTask={handleGoToTask} />
+                  <ErrorBoundary fallback={<div className="p-4 text-red-500">Error loading Ideation</div>}>
+                    <Ideation projectId={activeProjectId || selectedProjectId!} onGoToTask={handleGoToTask} />
+                  </ErrorBoundary>
                 )}
                 {activeView === 'insights' && (activeProjectId || selectedProjectId) && (
-                  <Insights projectId={activeProjectId || selectedProjectId!} />
+                  <ErrorBoundary fallback={<div className="p-4 text-red-500">Error loading Insights</div>}>
+                    <Insights projectId={activeProjectId || selectedProjectId!} />
+                  </ErrorBoundary>
                 )}
                 {activeView === 'github-issues' && (activeProjectId || selectedProjectId) && (
-                  <GitHubIssues
-                    onOpenSettings={() => {
-                      setSettingsInitialProjectSection('github');
-                      setIsSettingsDialogOpen(true);
-                    }}
-                    onNavigateToTask={handleGoToTask}
-                  />
-                )}
-                {activeView === 'gitlab-issues' && (activeProjectId || selectedProjectId) && (
-                  <GitLabIssues
-                    onOpenSettings={() => {
-                      setSettingsInitialProjectSection('gitlab');
-                      setIsSettingsDialogOpen(true);
-                    }}
-                    onNavigateToTask={handleGoToTask}
-                  />
-                )}
-                {/* GitHubPRs is always mounted but hidden when not active to preserve review state */}
-                {(activeProjectId || selectedProjectId) && (
-                  <div className={activeView === 'github-prs' ? 'h-full' : 'hidden'}>
-                    <GitHubPRs
+                  <ErrorBoundary fallback={<div className="p-4 text-red-500">Error loading GitHub Issues</div>}>
+                    <GitHubIssues
                       onOpenSettings={() => {
                         setSettingsInitialProjectSection('github');
                         setIsSettingsDialogOpen(true);
                       }}
-                      isActive={activeView === 'github-prs'}
+                      onNavigateToTask={handleGoToTask}
                     />
+                  </ErrorBoundary>
+                )}
+                {activeView === 'gitlab-issues' && (activeProjectId || selectedProjectId) && (
+                  <ErrorBoundary fallback={<div className="p-4 text-red-500">Error loading GitLab Issues</div>}>
+                    <GitLabIssues
+                      onOpenSettings={() => {
+                        setSettingsInitialProjectSection('gitlab');
+                        setIsSettingsDialogOpen(true);
+                      }}
+                      onNavigateToTask={handleGoToTask}
+                    />
+                  </ErrorBoundary>
+                )}
+                {/* GitHubPRs is always mounted but hidden when not active to preserve review state */}
+                {(activeProjectId || selectedProjectId) && (
+                  <div className={activeView === 'github-prs' ? 'h-full' : 'hidden'}>
+                    <ErrorBoundary fallback={<div className="p-4 text-red-500">Error loading GitHub PRs</div>}>
+                      <GitHubPRs
+                        onOpenSettings={() => {
+                          setSettingsInitialProjectSection('github');
+                          setIsSettingsDialogOpen(true);
+                        }}
+                        isActive={activeView === 'github-prs'}
+                      />
+                    </ErrorBoundary>
                   </div>
                 )}
                 {activeView === 'gitlab-merge-requests' && (activeProjectId || selectedProjectId) && (
-                  <GitLabMergeRequests
-                    projectId={activeProjectId || selectedProjectId!}
-                    onOpenSettings={() => {
-                      setSettingsInitialProjectSection('gitlab');
-                      setIsSettingsDialogOpen(true);
-                    }}
-                  />
+                  <ErrorBoundary fallback={<div className="p-4 text-red-500">Error loading GitLab Merge Requests</div>}>
+                    <GitLabMergeRequests
+                      projectId={activeProjectId || selectedProjectId!}
+                      onOpenSettings={() => {
+                        setSettingsInitialProjectSection('gitlab');
+                        setIsSettingsDialogOpen(true);
+                      }}
+                    />
+                  </ErrorBoundary>
                 )}
                 {activeView === 'changelog' && (activeProjectId || selectedProjectId) && (
-                  <Changelog />
+                  <ErrorBoundary fallback={<div className="p-4 text-red-500">Error loading Changelog</div>}>
+                    <Changelog />
+                  </ErrorBoundary>
                 )}
                 {activeView === 'worktrees' && (activeProjectId || selectedProjectId) && (
-                  <Worktrees projectId={activeProjectId || selectedProjectId!} />
+                  <ErrorBoundary fallback={<div className="p-4 text-red-500">Error loading Worktrees</div>}>
+                    <Worktrees projectId={activeProjectId || selectedProjectId!} />
+                  </ErrorBoundary>
                 )}
-                {activeView === 'agent-tools' && <AgentTools />}
+                {activeView === 'agent-tools' && (
+                  <ErrorBoundary fallback={<div className="p-4 text-red-500">Error loading Agent Tools</div>}>
+                    <AgentTools />
+                  </ErrorBoundary>
+                )}
               </>
             ) : (
               <WelcomeScreen
