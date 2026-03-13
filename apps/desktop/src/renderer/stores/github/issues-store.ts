@@ -39,6 +39,9 @@ interface IssuesState {
   getOpenIssuesCount: () => number;
 }
 
+// Race condition guard: prevents stale async results from overwriting fresh data
+let loadRequestId = 0;
+
 export const useIssuesStore = create<IssuesState>((set, get) => ({
   // Initial state
   issues: [],
@@ -132,12 +135,14 @@ export async function loadGitHubIssues(
   fetchAll: boolean = false
 ): Promise<void> {
   const store = useIssuesStore.getState();
+  const thisId = ++loadRequestId;
   store.setLoading(true);
   store.setError(null);
   store.resetPagination();
 
   try {
     const result = await window.electronAPI.getGitHubIssues(projectId, state, 1, fetchAll);
+    if (loadRequestId !== thisId) return;
     if (result.success && result.data) {
       store.setIssues(result.data.issues);
       store.setHasMore(result.data.hasMore);
@@ -146,9 +151,12 @@ export async function loadGitHubIssues(
       store.setError(result.error || 'Failed to load GitHub issues');
     }
   } catch (error) {
+    if (loadRequestId !== thisId) return;
     store.setError(error instanceof Error ? error.message : 'Unknown error');
   } finally {
-    store.setLoading(false);
+    if (loadRequestId === thisId) {
+      store.setLoading(false);
+    }
   }
 }
 
@@ -166,6 +174,8 @@ export async function loadMoreGitHubIssues(
     return;
   }
 
+  const thisId = ++loadRequestId;
+
   // Capture filter state at request start to detect if it changes during the async call
   const originalFilterState = store.filterState;
   const nextPage = store.currentPage + 1;
@@ -174,6 +184,7 @@ export async function loadMoreGitHubIssues(
 
   try {
     const result = await window.electronAPI.getGitHubIssues(projectId, state, nextPage, false);
+    if (loadRequestId !== thisId) return;
 
     // Verify filter state hasn't changed during the async operation
     // This prevents appending stale data from a different filter
@@ -191,9 +202,12 @@ export async function loadMoreGitHubIssues(
       store.setError(result.error || 'Failed to load more issues');
     }
   } catch (error) {
+    if (loadRequestId !== thisId) return;
     store.setError(error instanceof Error ? error.message : 'Unknown error');
   } finally {
-    store.setLoadingMore(false);
+    if (loadRequestId === thisId) {
+      store.setLoadingMore(false);
+    }
   }
 }
 

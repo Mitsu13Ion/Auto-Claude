@@ -168,6 +168,9 @@ function validatePlanData(plan: ImplementationPlan): boolean {
   return true;
 }
 
+// Race condition guard: prevents stale async results from overwriting fresh data
+let loadRequestId = 0;
+
 // localStorage key prefix for task order persistence
 const TASK_ORDER_KEY_PREFIX = 'task-order-state';
 
@@ -690,6 +693,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
  */
 export async function loadTasks(projectId: string, options?: { forceRefresh?: boolean }): Promise<void> {
   const store = useTaskStore.getState();
+  const thisId = ++loadRequestId;
   store.setLoading(true);
   store.setError(null);
 
@@ -701,6 +705,7 @@ export async function loadTasks(projectId: string, options?: { forceRefresh?: bo
 
   try {
     const result = await window.electronAPI.getTasks(projectId, options);
+    if (loadRequestId !== thisId) return;
 
     debugLog('[TaskStore.loadTasks] Received result from IPC:', {
       success: result.success,
@@ -721,10 +726,13 @@ export async function loadTasks(projectId: string, options?: { forceRefresh?: bo
       store.setError(result.error || 'Failed to load tasks');
     }
   } catch (error) {
+    if (loadRequestId !== thisId) return;
     debugWarn('[TaskStore.loadTasks] Exception while loading tasks:', error);
     store.setError(error instanceof Error ? error.message : 'Unknown error');
   } finally {
-    store.setLoading(false);
+    if (loadRequestId === thisId) {
+      store.setLoading(false);
+    }
   }
 }
 

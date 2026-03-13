@@ -724,11 +724,123 @@ export function handleOAuthToken(
  * Kept as a stub to satisfy the terminal-event-handler callback interface.
  */
 export function handleOnboardingComplete(
-  _terminal: TerminalProcess,
-  _data: string,
-  _getWindow: WindowGetter
+  terminal: TerminalProcess,
+  data: string,
+  getWindow: WindowGetter
 ): void {
-  // No-op — onboarding is handled proactively in handleOAuthToken()
+  const profileId = extractProfileIdFromAuthTerminalId(terminal.id);
+  if (!profileId) {
+    return;
+  }
+
+  // Check if output shows Claude Code welcome screen (onboarding complete indicators)
+  if (!OutputParser.isOnboardingCompleteOutput(data)) {
+    return;
+  }
+
+  console.warn('[ClaudeIntegration] Onboarding complete detected for terminal:', terminal.id);
+
+  // Try to extract email from the welcome screen (e.g., "user@example.com's Organization")
+  // Note: extractEmail automatically strips ANSI escape codes internally
+  let email = OutputParser.extractEmail(data);
+  if (!email) {
+    email = OutputParser.extractEmail(terminal.outputBuffer);
+  }
+
+  // Fallback: If terminal extraction failed or might be corrupt, read directly from Claude's config file
+  // This is the authoritative source and doesn't suffer from ANSI escape code issues
+  const profileManager = getClaudeProfileManager();
+  const profile = profileId ? profileManager.getProfile(profileId) : null;
+
+  if (!email && profile?.configDir) {
+    const configEmail = getEmailFromConfigDir(profile.configDir);
+    if (configEmail) {
+      console.warn('[ClaudeIntegration] Email not found in terminal output, using config file:', maskEmail(configEmail));
+      email = configEmail;
+    }
+  }
+
+  // Validate email looks correct (basic sanity check)
+  // If terminal extraction gave us a truncated email but config file has the correct one, prefer config
+  if (email && profile?.configDir) {
+    const configEmail = getEmailFromConfigDir(profile.configDir);
+    if (configEmail && configEmail !== email) {
+      // Config file email is different - it's more authoritative
+      console.warn('[ClaudeIntegration] Terminal email differs from config file, using config file:', {
+        terminalEmail: maskEmail(email),
+        configEmail: maskEmail(configEmail)
+      });
+      email = configEmail;
+    }
+  }
+
+  console.warn('[ClaudeIntegration] Email extraction attempt:', {
+    profileId,
+    foundEmail: maskEmail(email),
+    dataLength: data.length,
+    bufferLength: terminal.outputBuffer.length
+  });
+
+  // Update profile with email and subscription metadata if found and profile exists
+  // Always update - the newly extracted email from re-authentication should overwrite any stale/truncated email
+  if (profileId && email && profile) {
+    const previousEmail = profile.email;
+    profile.email = email;
+    // Also update subscription metadata from Keychain credentials
+    updateProfileSubscriptionMetadata(profile, profile.configDir);
+    profileManager.saveProfile(profile);
+    if (previousEmail !== email) {
+      console.warn('[ClaudeIntegration] Updated profile email from welcome screen:', profileId, maskEmail(email), '(was:', maskEmail(previousEmail), ')');
+    }
+  }
+
+  // Persist onboarding completion so future invocations skip the wizard
+  if (profile?.configDir) {
+    ensureOnboardingComplete(profile.configDir);
+  }
+
+  safeSendToRenderer(getWindow, IPC_CHANNELS.TERMINAL_OAUTH_TOKEN, {
+    terminalId: terminal.id,
+    profileId,
+    email,
+    success: true,
+    detectedAt: new Date().toISOString()
+  } as OAuthTokenEvent);
+
+  // Trigger immediate usage fetch after successful re-authentication
+  // This gives the user immediate feedback that their account is working
+  if (profileId) {
+    try {
+      const usageMonitor = getUsageMonitor();
+      if (usageMonitor) {
+        // Clear any auth failure status for this profile since they just re-authenticated
+        usageMonitor.clearAuthFailedProfile(profileId);
+
+        console.warn('[ClaudeIntegration] Triggering immediate usage fetch after re-authentication:', profileId);
+
+        // Switch to this profile if it's not already active, then fetch usage
+        const profileManager = getClaudeProfileManager();
+
+        // Also clear the migration flag if this profile was migrated to an isolated directory
+        // This prevents the auth failure modal from showing again on next startup
+        if (profileManager.isProfileMigrated(profileId)) {
+          profileManager.clearMigratedProfile(profileId);
+          console.warn('[ClaudeIntegration] Cleared migration flag for re-authenticated profile:', profileId);
+        }
+        const activeProfile = profileManager.getActiveProfile();
+        if (activeProfile?.id !== profileId) {
+          profileManager.setActiveProfile(profileId);
+        }
+
+        // Small delay to allow profile switch to settle, then trigger usage fetch
+        setTimeout(() => {
+          usageMonitor.checkNow();
+        }, 500);
+      }
+    } catch (error) {
+      console.error('[ClaudeIntegration] Failed to trigger post-auth usage fetch:', error);
+    }
+  }
 }
 
 /**

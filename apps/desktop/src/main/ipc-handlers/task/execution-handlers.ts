@@ -2,7 +2,7 @@ import { ipcMain, BrowserWindow } from 'electron';
 import { IPC_CHANNELS, AUTO_BUILD_PATHS, getSpecsDir } from '../../../shared/constants';
 import type { IPCResult, TaskStartOptions, TaskStatus, ImageAttachment } from '../../../shared/types';
 import path from 'path';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, promises as fsPromises } from 'fs';
 import { spawnSync, execFileSync } from 'child_process';
 import { getToolPath } from '../../cli-tool-manager';
 import { AgentManager } from '../../agent';
@@ -467,16 +467,46 @@ export function registerTaskExecutionHandlers(
             console.log('[TASK_REVIEW] Discarded working tree changes in main');
           }
 
-          // Step 3: Clean untracked files that came from the merge
-          // IMPORTANT: Exclude .auto-claude directory to preserve specs and worktree data
-          const cleanResult = spawnSync(getToolPath('git'), ['clean', '-fd', '-e', '.auto-claude'], {
-            cwd: project.path,
-            encoding: 'utf-8',
-            stdio: 'pipe',
-            env: getIsolatedGitEnv()
-          });
-          if (cleanResult.status === 0) {
-            console.log('[TASK_REVIEW] Cleaned untracked files in main (excluding .auto-claude)');
+          // Step 3: Selectively clean only files introduced by the merge.
+          // Uses the pre-merge untracked snapshot saved in worktree-handlers.ts
+          // to avoid deleting pre-existing user files.
+          const snapshotPath = path.join(specDir, 'pre_merge_untracked.json');
+          try {
+            const snapshotRaw = readFileSync(snapshotPath, 'utf-8');
+            const snapshot = JSON.parse(snapshotRaw) as {
+              projectPath: string;
+              specId: string;
+              untrackedFiles: string[];
+            };
+
+            if (snapshot.projectPath === project.path && snapshot.specId === task.specId) {
+              // Get current untracked files
+              const lsResult = spawnSync(
+                getToolPath('git'),
+                ['ls-files', '--others', '--exclude-standard', '-z'],
+                { cwd: project.path, encoding: 'utf-8', stdio: 'pipe', env: getIsolatedGitEnv() }
+              );
+              const currentUntracked = (lsResult.stdout || '').split('\0').filter(Boolean);
+
+              // Only delete files NOT in the pre-merge snapshot (i.e., introduced by the merge)
+              const preExisting = new Set(snapshot.untrackedFiles);
+              const filesToDelete = currentUntracked.filter(f => !preExisting.has(f));
+
+              for (const file of filesToDelete) {
+                const filePath = path.join(project.path, file);
+                await fsPromises.unlink(filePath).catch(() => {});
+              }
+              console.log(`[TASK_REVIEW] Selectively cleaned ${filesToDelete.length} merge-introduced files (preserved ${currentUntracked.length - filesToDelete.length} pre-existing)`);
+            } else {
+              console.warn('[TASK_REVIEW] Snapshot project/spec mismatch — skipping clean to protect user files');
+            }
+
+            // Clean up the snapshot file
+            await fsPromises.unlink(snapshotPath).catch(() => {});
+          } catch {
+            // No snapshot found — safe fallback: don't delete anything.
+            // Better to leave extra files than destroy user data.
+            console.warn('[TASK_REVIEW] No pre-merge snapshot found — skipping untracked file cleanup to protect user data');
           }
 
           console.log('[TASK_REVIEW] Main branch restored to pre-merge state');

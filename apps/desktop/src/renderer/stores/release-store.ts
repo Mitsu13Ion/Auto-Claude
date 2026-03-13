@@ -59,6 +59,9 @@ const initialState = {
   error: null
 };
 
+// Race condition guard: prevents stale async results from overwriting fresh data
+let loadRequestId = 0;
+
 export const useReleaseStore = create<ReleaseState>((set) => ({
   ...initialState,
 
@@ -90,11 +93,13 @@ export const useReleaseStore = create<ReleaseState>((set) => ({
  */
 export async function loadReleaseableVersions(projectId: string): Promise<void> {
   const store = useReleaseStore.getState();
+  const thisId = ++loadRequestId;
   store.setIsLoadingVersions(true);
   store.setError(null);
 
   try {
     const result = await window.electronAPI.getReleaseableVersions(projectId);
+    if (loadRequestId !== thisId) return;
     if (result.success && result.data) {
       store.setReleaseableVersions(result.data);
 
@@ -109,9 +114,12 @@ export async function loadReleaseableVersions(projectId: string): Promise<void> 
       store.setError(result.error || 'Failed to load versions');
     }
   } catch (error) {
+    if (loadRequestId !== thisId) return;
     store.setError(error instanceof Error ? error.message : 'Failed to load versions');
   } finally {
-    store.setIsLoadingVersions(false);
+    if (loadRequestId === thisId) {
+      store.setIsLoadingVersions(false);
+    }
   }
 }
 

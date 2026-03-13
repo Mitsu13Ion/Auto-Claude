@@ -2040,6 +2040,34 @@ export function registerWorktreeHandlers(
           dryRun: false,
         });
 
+        // Save a snapshot of currently untracked files BEFORE merge.
+        // On review rejection, only files NOT in this snapshot will be cleaned up,
+        // preventing accidental deletion of pre-existing user files.
+        try {
+          const untrackedResult = execFileSync(
+            getToolPath('git'),
+            ['ls-files', '--others', '--exclude-standard', '-z'],
+            { cwd: project.path, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+          );
+          const untrackedFiles = untrackedResult.split('\0').filter(Boolean);
+          const snapshotData = {
+            projectPath: project.path,
+            specId: task.specId,
+            timestamp: new Date().toISOString(),
+            untrackedFiles,
+          };
+          await fsPromises.writeFile(
+            path.join(specDir, 'pre_merge_untracked.json'),
+            JSON.stringify(snapshotData, null, 2),
+            'utf-8'
+          );
+          debug('Saved pre-merge untracked snapshot:', untrackedFiles.length, 'files');
+        } catch (snapshotErr) {
+          // Non-fatal: if we can't save the snapshot, the merge can still proceed.
+          // On rejection, the fallback behavior will avoid deleting anything.
+          debug('Failed to save pre-merge untracked snapshot (non-fatal):', snapshotErr);
+        }
+
         // Run the merge with progress callbacks
         let mergeSucceeded = false;
         let mergeError: string | undefined;

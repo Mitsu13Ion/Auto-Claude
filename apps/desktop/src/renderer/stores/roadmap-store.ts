@@ -29,6 +29,9 @@ import {
 let generationActor: Actor<typeof roadmapGenerationMachine> | null = null;
 const featureActors = new Map<string, Actor<typeof roadmapFeatureMachine>>();
 
+// Race condition guard: prevents stale async results from overwriting fresh data
+let loadRequestCounter = 0;
+
 /**
  * Reset all actors to clean state.
  * Use this in tests (afterEach) and HMR dispose handlers to avoid stale actors.
@@ -664,6 +667,7 @@ export const useRoadmapStore = create<RoadmapState>((set) => ({
  */
 async function reconcileLinkedFeatures(projectId: string, roadmap: Roadmap): Promise<void> {
   const store = useRoadmapStore.getState();
+  const initialProjectId = store.currentProjectId;
 
   // Find features that have a linkedSpecId but aren't done yet (or are done without taskOutcome)
   const featuresNeedingReconciliation = roadmap.features.filter(
@@ -675,6 +679,9 @@ async function reconcileLinkedFeatures(projectId: string, roadmap: Roadmap): Pro
   // Fetch current tasks for the project
   const tasksResult = await window.electronAPI.getTasks(projectId);
   if (!tasksResult.success || !tasksResult.data) return;
+
+  // Guard: project changed during async call
+  if (useRoadmapStore.getState().currentProjectId !== initialProjectId) return;
 
   // Guard against empty task list (e.g., specs directory temporarily inaccessible)
   // to avoid falsely marking all linked features as 'deleted'
@@ -712,6 +719,9 @@ async function reconcileLinkedFeatures(projectId: string, roadmap: Roadmap): Pro
   }
 
   if (hasChanges) {
+    // Guard: project changed during reconciliation
+    if (useRoadmapStore.getState().currentProjectId !== initialProjectId) return;
+
     const updatedRoadmap = useRoadmapStore.getState().roadmap;
     if (updatedRoadmap) {
       console.log('[Roadmap] Reconciled linked features with task states');
@@ -726,6 +736,13 @@ async function reconcileLinkedFeatures(projectId: string, roadmap: Roadmap): Pro
 export async function loadRoadmap(projectId: string): Promise<void> {
   const store = useRoadmapStore.getState();
 
+  // Clear stale data immediately on project switch
+  store.setRoadmap(null);
+  store.setCompetitorAnalysis(null);
+
+  // Race condition guard: if another loadRoadmap call starts, abandon this one
+  const thisRequest = ++loadRequestCounter;
+
   // Always set current project ID first - this ensures event handlers
   // only process events for the currently viewed project
   store.setCurrentProjectId(projectId);
@@ -733,9 +750,11 @@ export async function loadRoadmap(projectId: string): Promise<void> {
   // Query if roadmap generation is currently running for this project
   // This restores the generation status when switching back to a project
   const statusResult = await window.electronAPI.getRoadmapStatus(projectId);
+  if (loadRequestCounter !== thisRequest) return;
   if (statusResult.success && statusResult.data?.isRunning) {
     // Generation is running - try to load persisted progress for more accurate state
     const progressResult = await window.electronAPI.loadRoadmapProgress(projectId);
+    if (loadRequestCounter !== thisRequest) return;
     if (progressResult.success && progressResult.data) {
       // Restore full progress state including timestamps
       const persistedProgress = progressResult.data;
@@ -774,6 +793,7 @@ export async function loadRoadmap(projectId: string): Promise<void> {
   }
 
   const result = await window.electronAPI.getRoadmap(projectId);
+  if (loadRequestCounter !== thisRequest) return;
   if (result.success && result.data) {
     // Migrate roadmap to latest schema if needed
     const migratedRoadmap = migrateRoadmapIfNeeded(result.data);
@@ -788,6 +808,7 @@ export async function loadRoadmap(projectId: string): Promise<void> {
 
     // Reconcile features with linked tasks that may have been completed/deleted
     await reconcileLinkedFeatures(projectId, migratedRoadmap);
+    if (loadRequestCounter !== thisRequest) return;
 
     // Extract and set competitor analysis separately if present
     if (migratedRoadmap.competitorAnalysis) {

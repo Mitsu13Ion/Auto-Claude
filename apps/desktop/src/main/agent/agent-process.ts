@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readFileSync } from 'fs';
+import { homedir } from 'os';
 import { app } from 'electron';
 
 // ESM-compatible __dirname
@@ -24,6 +25,25 @@ import { getAugmentedEnv } from '../env-utils';
 import { getToolInfo, getClaudeCliPathForSdk } from '../cli-tool-manager';
 import { killProcessGracefully, isWindows } from '../platform';
 import { debugLog } from '../../shared/utils/debug-logger';
+import { ensureValidToken } from '../claude-profile/token-refresh';
+import { clearKeychainCache } from '../claude-profile/credential-utils';
+
+// ---- Fix C: Smart HOME path replacement ----
+// Markers that identify worktree-synthesized HOME paths.
+// When an agent runs inside a worktree its HOME may be rewritten to a path
+// inside the worktree directory. This breaks proxy configs, package managers,
+// and any tooling that relies on ~/.config, ~/.npmrc, etc.
+const WORKTREE_HOME_PATH_MARKERS = ['.auto-claude/worktrees', '.auto-claude\\worktrees'];
+
+/**
+ * Detect whether a HOME path points inside a worktree directory.
+ * Worktree paths are synthetic (created by the app) and should not be
+ * used as HOME because enterprise environments rely on the real HOME
+ * for proxy configs, credential helpers, and package manager settings.
+ */
+function isWorktreeHomePath(homePath: string): boolean {
+  return WORKTREE_HOME_PATH_MARKERS.some(marker => homePath.includes(marker));
+}
 
 /**
  * Type for supported CLI tools
@@ -252,6 +272,20 @@ export class AgentProcessManager {
       oauthTokenPrefix: mergedEnv.CLAUDE_CODE_OAUTH_TOKEN?.substring(0, 8) || '(not set)',
       apiKeyPrefix: mergedEnv.ANTHROPIC_API_KEY?.substring(0, 8) || '(not set)',
     });
+
+    // Fix C: Smart HOME path replacement
+    // Only override HOME if it's missing or points to a worktree path.
+    // Enterprise environments rely on custom HOME for proxy configs,
+    // credential helpers, and package manager settings — don't clobber it.
+    const systemHome = homedir();
+    const currentHome = mergedEnv.HOME || mergedEnv.USERPROFILE;
+    if (!currentHome || isWorktreeHomePath(currentHome)) {
+      mergedEnv.HOME = systemHome;
+      debugLog('[AgentProcess:setupEnv] Replaced HOME (was worktree or missing):', {
+        previousHome: currentHome || '(not set)',
+        newHome: systemHome,
+      });
+    }
 
     return mergedEnv;
   }
@@ -548,6 +582,23 @@ export class AgentProcessManager {
       startedAt: new Date(),
       spawnId
     });
+
+    // Fix E: Pre-spawn OAuth token refresh
+    // Ensure the active profile's OAuth token is valid before spawning.
+    // This prevents immediate 401 failures when tokens expire between spawns.
+    try {
+      const profileManager = getClaudeProfileManager();
+      const activeProfile = profileManager.getActiveProfile();
+      const configDir = activeProfile.configDir;
+      const refreshResult = await ensureValidToken(configDir);
+      if (refreshResult.wasRefreshed) {
+        clearKeychainCache(configDir);
+        debugLog('[AgentProcess:spawnProcess] Pre-spawn token refresh succeeded for profile:', activeProfile.id);
+      }
+    } catch (error) {
+      // Token refresh failure is non-fatal — agent may still work with existing token
+      console.error('[AgentProcess:spawnProcess] Pre-spawn token refresh failed:', error);
+    }
 
     const env = this.setupProcessEnvironment(extraEnv);
 
@@ -852,6 +903,23 @@ export class AgentProcessManager {
       spawnId,
       worker: null, // Will be set after bridge.spawn()
     });
+
+    // Fix E: Pre-spawn OAuth token refresh
+    // Ensure the active profile's OAuth token is valid before spawning.
+    // This prevents immediate 401 failures when tokens expire between spawns.
+    try {
+      const profileManager = getClaudeProfileManager();
+      const activeProfile = profileManager.getActiveProfile();
+      const configDir = activeProfile.configDir;
+      const refreshResult = await ensureValidToken(configDir);
+      if (refreshResult.wasRefreshed) {
+        clearKeychainCache(configDir);
+        debugLog('[AgentProcess:spawnWorkerProcess] Pre-spawn token refresh succeeded for profile:', activeProfile.id);
+      }
+    } catch (error) {
+      // Token refresh failure is non-fatal — agent may still work with existing token
+      console.error('[AgentProcess:spawnWorkerProcess] Pre-spawn token refresh failed:', error);
+    }
 
     // Check if killed during setup
     if (this.state.wasSpawnKilled(spawnId)) {

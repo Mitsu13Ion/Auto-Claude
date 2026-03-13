@@ -118,6 +118,13 @@ export const AUTO_BUILD_PATHS = {
   MEMORY_STATE: '.memory_state.json'
 } as const;
 
+// ============================================
+// RiverCode Feature Switches
+// ============================================
+
+/** Disable GitHub integration UI (issues, PRs) — RiverCode uses GitLab exclusively */
+export const GITHUB_SUPPORT_DISABLED = true;
+
 /**
  * Get the specs directory path.
  * All specs go to .auto-claude/specs/ (the project's data directory).

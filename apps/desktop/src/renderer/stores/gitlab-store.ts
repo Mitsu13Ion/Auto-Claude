@@ -40,6 +40,9 @@ interface GitLabState {
   getOpenIssuesCount: () => number;
 }
 
+// Race condition guard: prevents stale async results from overwriting fresh data
+let loadRequestId = 0;
+
 export const useGitLabStore = create<GitLabState>((set, get) => ({
   // Initial state
   issues: [],
@@ -112,6 +115,7 @@ export const useGitLabStore = create<GitLabState>((set, get) => ({
 // Action functions for use outside of React components
 export async function loadGitLabIssues(projectId: string, state?: 'opened' | 'closed' | 'all'): Promise<void> {
   const store = useGitLabStore.getState();
+  const thisId = ++loadRequestId;
   store.setLoading(true);
   store.setError(null);
 
@@ -122,15 +126,19 @@ export async function loadGitLabIssues(projectId: string, state?: 'opened' | 'cl
 
   try {
     const result = await window.electronAPI.getGitLabIssues(projectId, state);
+    if (loadRequestId !== thisId) return;
     if (result.success && result.data) {
       store.setIssues(result.data);
     } else {
       store.setError(result.error || 'Failed to load GitLab issues');
     }
   } catch (error) {
+    if (loadRequestId !== thisId) return;
     store.setError(error instanceof Error ? error.message : 'Unknown error');
   } finally {
-    store.setLoading(false);
+    if (loadRequestId === thisId) {
+      store.setLoading(false);
+    }
   }
 }
 

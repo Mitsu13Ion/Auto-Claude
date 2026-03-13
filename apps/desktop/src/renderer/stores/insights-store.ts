@@ -56,6 +56,10 @@ const initialStatus: InsightsChatStatus = {
   message: ''
 };
 
+// Race condition guards: prevent stale async results from overwriting fresh data
+let loadInsightsSessionsId = 0;
+let loadInsightsSessionId = 0;
+
 export const useInsightsStore = create<InsightsState>((set, _get) => ({
   // Initial state
   session: null,
@@ -221,6 +225,7 @@ export const useInsightsStore = create<InsightsState>((set, _get) => ({
 
 export async function loadInsightsSessions(projectId: string, includeArchived?: boolean): Promise<void> {
   const store = useInsightsStore.getState();
+  const thisId = ++loadInsightsSessionsId;
   store.setLoadingSessions(true);
 
   // Use explicit parameter if provided, otherwise read from store
@@ -228,18 +233,23 @@ export async function loadInsightsSessions(projectId: string, includeArchived?: 
 
   try {
     const result = await window.electronAPI.listInsightsSessions(projectId, archived);
+    if (loadInsightsSessionsId !== thisId) return;
     if (result.success && result.data) {
       store.setSessions(result.data);
     } else {
       store.setSessions([]);
     }
   } finally {
-    store.setLoadingSessions(false);
+    if (loadInsightsSessionsId === thisId) {
+      store.setLoadingSessions(false);
+    }
   }
 }
 
 export async function loadInsightsSession(projectId: string, includeArchived?: boolean): Promise<void> {
+  const thisId = ++loadInsightsSessionId;
   const result = await window.electronAPI.getInsightsSession(projectId);
+  if (loadInsightsSessionId !== thisId) return;
   if (result.success && result.data) {
     useInsightsStore.getState().setSession(result.data);
   } else {

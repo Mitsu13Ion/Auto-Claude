@@ -59,6 +59,7 @@ import { RateLimitIndicator } from './RateLimitIndicator';
 
 import { UpdateBanner } from './UpdateBanner';
 import type { Project, GitStatus } from '../../shared/types';
+import { GITHUB_SUPPORT_DISABLED } from '../../shared/constants/config';
 
 export type SidebarView = 'kanban' | 'terminals' | 'roadmap' | 'context' | 'ideation' | 'github-issues' | 'gitlab-issues' | 'github-prs' | 'gitlab-merge-requests' | 'changelog' | 'insights' | 'worktrees' | 'agent-tools';
 
@@ -139,7 +140,7 @@ export function Sidebar({
   const visibleNavItems = useMemo(() => {
     const items = [...baseNavItems];
 
-    if (githubEnabled) {
+    if (githubEnabled && !GITHUB_SUPPORT_DISABLED) {
       items.push(...githubNavItems);
     }
 

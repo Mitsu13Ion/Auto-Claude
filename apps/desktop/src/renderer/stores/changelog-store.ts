@@ -168,6 +168,12 @@ const initialState = {
   error: null as string | null
 };
 
+// Race condition guards: prevent stale async results from overwriting fresh data
+let loadChangelogDataId = 0;
+let loadTaskSpecsId = 0;
+let loadGitDataId = 0;
+let loadCommitsPreviewId = 0;
+
 export const useChangelogStore = create<ChangelogState>((set, get) => ({
   ...initialState,
 
@@ -278,6 +284,7 @@ export const useChangelogStore = create<ChangelogState>((set, get) => ({
 // Helper functions for loading data
 export async function loadChangelogData(projectId: string): Promise<void> {
   const store = useChangelogStore.getState();
+  const thisId = ++loadChangelogDataId;
 
   try {
     // Get tasks from the task store (which has the correct UI status)
@@ -288,35 +295,42 @@ export async function loadChangelogData(projectId: string): Promise<void> {
 
     // Load done tasks - pass the renderer's task list to get correct status
     const tasksResult = await window.electronAPI.getChangelogDoneTasks(projectId, tasks);
+    if (loadChangelogDataId !== thisId) return;
     if (tasksResult.success && tasksResult.data) {
       store.setDoneTasks(tasksResult.data);
     }
 
     // Load existing changelog
     const changelogResult = await window.electronAPI.readExistingChangelog(projectId);
+    if (loadChangelogDataId !== thisId) return;
     if (changelogResult.success && changelogResult.data) {
       store.setExistingChangelog(changelogResult.data);
     }
   } catch (error) {
+    if (loadChangelogDataId !== thisId) return;
     store.setError(error instanceof Error ? error.message : 'Failed to load changelog data');
   }
 }
 
 export async function loadTaskSpecs(projectId: string, taskIds: string[]): Promise<void> {
   const store = useChangelogStore.getState();
+  const thisId = ++loadTaskSpecsId;
 
   try {
     const result = await window.electronAPI.loadTaskSpecs(projectId, taskIds);
+    if (loadTaskSpecsId !== thisId) return;
     if (result.success && result.data) {
       store.setLoadedSpecs(result.data);
     }
   } catch (error) {
+    if (loadTaskSpecsId !== thisId) return;
     store.setError(error instanceof Error ? error.message : 'Failed to load task specs');
   }
 }
 
 export async function loadGitData(projectId: string): Promise<void> {
   const store = useChangelogStore.getState();
+  const thisId = ++loadGitDataId;
 
   store.setIsLoadingGitData(true);
   store.setError(null);
@@ -327,6 +341,7 @@ export async function loadGitData(projectId: string): Promise<void> {
       window.electronAPI.getChangelogBranches(projectId),
       window.electronAPI.getChangelogTags(projectId)
     ]);
+    if (loadGitDataId !== thisId) return;
 
     if (branchesResult.success && branchesResult.data) {
       store.setBranches(branchesResult.data);
@@ -367,14 +382,18 @@ export async function loadGitData(projectId: string): Promise<void> {
       }
     }
   } catch (error) {
+    if (loadGitDataId !== thisId) return;
     store.setError(error instanceof Error ? error.message : 'Failed to load git data');
   } finally {
-    store.setIsLoadingGitData(false);
+    if (loadGitDataId === thisId) {
+      store.setIsLoadingGitData(false);
+    }
   }
 }
 
 export async function loadCommitsPreview(projectId: string): Promise<void> {
   const store = useChangelogStore.getState();
+  const thisId = ++loadCommitsPreviewId;
 
   store.setIsLoadingCommits(true);
   store.setError(null);
@@ -410,6 +429,7 @@ export async function loadCommitsPreview(projectId: string): Promise<void> {
     }
 
     const result = await window.electronAPI.getChangelogCommitsPreview(projectId, options, mode);
+    if (loadCommitsPreviewId !== thisId) return;
 
     if (result.success && result.data) {
       store.setPreviewCommits(result.data);
@@ -418,10 +438,13 @@ export async function loadCommitsPreview(projectId: string): Promise<void> {
       store.setPreviewCommits([]);
     }
   } catch (error) {
+    if (loadCommitsPreviewId !== thisId) return;
     store.setError(error instanceof Error ? error.message : 'Failed to load commits preview');
     store.setPreviewCommits([]);
   } finally {
-    store.setIsLoadingCommits(false);
+    if (loadCommitsPreviewId === thisId) {
+      store.setIsLoadingCommits(false);
+    }
   }
 }
 

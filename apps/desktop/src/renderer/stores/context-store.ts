@@ -44,6 +44,11 @@ interface ContextState {
   clearAll: () => void;
 }
 
+// Race condition guards: prevent stale async results from overwriting fresh data
+let loadProjectContextId = 0;
+let refreshProjectIndexId = 0;
+let searchMemoriesId = 0;
+
 export const useContextStore = create<ContextState>((set) => ({
   // Project Index
   projectIndex: null,
@@ -100,6 +105,7 @@ export const useContextStore = create<ContextState>((set) => ({
  */
 export async function loadProjectContext(projectId: string): Promise<void> {
   const store = useContextStore.getState();
+  const thisId = ++loadProjectContextId;
   store.setIndexLoading(true);
   store.setMemoryLoading(true);
   store.setIndexError(null);
@@ -107,6 +113,7 @@ export async function loadProjectContext(projectId: string): Promise<void> {
 
   try {
     const result = await window.electronAPI.getProjectContext(projectId);
+    if (loadProjectContextId !== thisId) return;
     if (result.success && result.data) {
       store.setProjectIndex(result.data.projectIndex);
       store.setMemoryStatus(result.data.memoryStatus);
@@ -116,10 +123,13 @@ export async function loadProjectContext(projectId: string): Promise<void> {
       store.setIndexError(result.error || 'Failed to load project context');
     }
   } catch (error) {
+    if (loadProjectContextId !== thisId) return;
     store.setIndexError(error instanceof Error ? error.message : 'Unknown error');
   } finally {
-    store.setIndexLoading(false);
-    store.setMemoryLoading(false);
+    if (loadProjectContextId === thisId) {
+      store.setIndexLoading(false);
+      store.setMemoryLoading(false);
+    }
   }
 }
 
@@ -128,20 +138,25 @@ export async function loadProjectContext(projectId: string): Promise<void> {
  */
 export async function refreshProjectIndex(projectId: string): Promise<void> {
   const store = useContextStore.getState();
+  const thisId = ++refreshProjectIndexId;
   store.setIndexLoading(true);
   store.setIndexError(null);
 
   try {
     const result = await window.electronAPI.refreshProjectIndex(projectId);
+    if (refreshProjectIndexId !== thisId) return;
     if (result.success && result.data) {
       store.setProjectIndex(result.data);
     } else {
       store.setIndexError(result.error || 'Failed to refresh project index');
     }
   } catch (error) {
+    if (refreshProjectIndexId !== thisId) return;
     store.setIndexError(error instanceof Error ? error.message : 'Unknown error');
   } finally {
-    store.setIndexLoading(false);
+    if (refreshProjectIndexId === thisId) {
+      store.setIndexLoading(false);
+    }
   }
 }
 
@@ -153,6 +168,7 @@ export async function searchMemories(
   query: string
 ): Promise<void> {
   const store = useContextStore.getState();
+  const thisId = ++searchMemoriesId;
   store.setSearchQuery(query);
 
   if (!query.trim()) {
@@ -164,15 +180,19 @@ export async function searchMemories(
 
   try {
     const result = await window.electronAPI.searchMemories(projectId, query);
+    if (searchMemoriesId !== thisId) return;
     if (result.success && result.data) {
       store.setSearchResults(result.data);
     } else {
       store.setSearchResults([]);
     }
   } catch (_error) {
+    if (searchMemoriesId !== thisId) return;
     store.setSearchResults([]);
   } finally {
-    store.setSearchLoading(false);
+    if (searchMemoriesId === thisId) {
+      store.setSearchLoading(false);
+    }
   }
 }
 

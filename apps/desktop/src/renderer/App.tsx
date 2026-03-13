@@ -899,7 +899,7 @@ export function App() {
                 </div>
                 {activeView === 'roadmap' && (activeProjectId || selectedProjectId) && (
                   <ErrorBoundary fallback={<div className="p-4 text-red-500">Error loading Roadmap</div>}>
-                    <Roadmap projectId={activeProjectId || selectedProjectId!} onGoToTask={handleGoToTask} />
+                    <Roadmap key={activeProjectId || selectedProjectId} projectId={activeProjectId || selectedProjectId!} onGoToTask={handleGoToTask} />
                   </ErrorBoundary>
                 )}
                 {activeView === 'context' && (activeProjectId || selectedProjectId) && (
