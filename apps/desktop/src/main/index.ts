@@ -93,6 +93,26 @@ import { APP_UPDATER_DISABLED } from '../shared/constants/config';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Migrate userData from old app name (auto-claude-ui → aperant)
+// Must run before any code accesses app.getPath('userData')
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const newUserData = app.getPath('userData');
+  const oldUserData = join(dirname(newUserData), 'auto-claude-ui');
+  if (existsSync(oldUserData) && !existsSync(join(newUserData, '.migrated'))) {
+    try {
+      // Copy all files from old location to new (don't move — keeps old as backup)
+      cpSync(oldUserData, newUserData, { recursive: true, force: false, errorOnExist: false });
+      // Mark as migrated so we don't repeat
+      writeFileSync(join(newUserData, '.migrated'), new Date().toISOString());
+      console.warn('[main] Migrated userData from auto-claude-ui to aperant');
+    } catch (err) {
+      console.warn('[main] userData migration failed (non-fatal):', err);
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Window sizing constants
 // ─────────────────────────────────────────────────────────────────────────────
 /** Preferred window width on startup */
