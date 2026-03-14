@@ -137,7 +137,7 @@ export async function runContinuableSession(
     if (i >= maxContinuations) {
       return {
         ...result,
-        outcome: 'completed', // Treat as completed — agent did useful work
+        outcome: 'context_window',
         stepsExecuted: totalStepsExecuted,
         toolCallCount: totalToolCallCount,
         durationMs: totalDurationMs,
@@ -183,7 +183,7 @@ export async function runContinuableSession(
 
   // Should not reach here, but guard against it
   return {
-    outcome: 'completed',
+    outcome: 'context_window',
     stepsExecuted: totalStepsExecuted,
     toolCallCount: totalToolCallCount,
     durationMs: totalDurationMs,

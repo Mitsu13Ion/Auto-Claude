@@ -260,6 +260,32 @@ describe('QALoop', () => {
     expect(outcome.reason).toBe('max_iterations');
   });
 
+  it('does not treat reviewer max_steps as a successful review cycle', async () => {
+    mockReadFile.mockImplementation((path: string) => {
+      if (path.endsWith('implementation_plan.json')) {
+        return Promise.resolve(completedPlan());
+      }
+      return Promise.reject(new Error('ENOENT'));
+    });
+
+    const runSession = vi.fn(async ({ agentType }: QASessionRunConfig) => {
+      if (agentType === 'qa_reviewer') {
+        return makeSessionResult('max_steps');
+      }
+      return makeSessionResult('completed');
+    });
+
+    const config = makeConfig({ runSession, maxIterations: 2 });
+    const loop = new QALoop(config);
+    const outcome = await loop.run();
+
+    expect(outcome.approved).toBe(false);
+    expect(outcome.reason).toBe('max_iterations');
+    expect(runSession).not.toHaveBeenCalledWith(
+      expect.objectContaining({ agentType: 'qa_fixer' }),
+    );
+  });
+
   // -------------------------------------------------------------------------
   // Consecutive error escalation
   // -------------------------------------------------------------------------

@@ -471,10 +471,10 @@ export class BuildOrchestrator extends EventEmitter {
       return { success: false, error: 'Build cancelled' };
     }
 
-    if (iteratorResult.stuckSubtasks.length > 0 && iteratorResult.completedSubtasks === 0) {
+    if (iteratorResult.stuckSubtasks.length > 0) {
       return {
         success: false,
-        error: `All subtasks stuck: ${iteratorResult.stuckSubtasks.join(', ')}`,
+        error: `Subtasks stuck after max retries: ${iteratorResult.stuckSubtasks.join(', ')}`,
       };
     }
 
@@ -526,6 +526,13 @@ export class BuildOrchestrator extends EventEmitter {
         return { success: false, error: 'Build cancelled' };
       }
 
+      if (reviewResult.outcome !== 'completed') {
+        return {
+          success: false,
+          error: reviewResult.error?.message ?? `QA reviewer ended with outcome: ${reviewResult.outcome}`,
+        };
+      }
+
       // Check QA result
       const qaStatus = await this.readQAStatus();
 
@@ -562,6 +569,14 @@ export class BuildOrchestrator extends EventEmitter {
         });
 
         this.emitTyped('session-complete', fixResult, 'qa_fixing');
+
+        if (fixResult.outcome !== 'completed') {
+          return {
+            success: false,
+            error: fixResult.error?.message ?? `QA fixer ended with outcome: ${fixResult.outcome}`,
+          };
+        }
+
         this.markPhaseCompleted('qa_fixing');
 
         // Delete qa_report.md before re-review so the reviewer writes a clean verdict.

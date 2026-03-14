@@ -37,7 +37,7 @@ import type { SessionResult } from '../session/types';
 // =============================================================================
 
 /** Maximum QA review/fix iterations before escalating to human */
-const MAX_QA_ITERATIONS = 50;
+const MAX_QA_ITERATIONS = 5;
 
 /** Stop after this many consecutive errors without progress */
 const MAX_CONSECUTIVE_ERRORS = 3;
@@ -255,6 +255,29 @@ export class QALoop extends EventEmitter {
           return this.outcome(false, iteration, Date.now() - startTime, 'cancelled');
         }
 
+        if (reviewResult.outcome !== 'completed') {
+          consecutiveErrors++;
+          const errorMsg = reviewResult.error?.message
+            ?? `QA reviewer ended with outcome: ${reviewResult.outcome}`;
+          await this.recordIteration(iteration, 'error', [{ title: 'QA reviewer error', description: errorMsg }], Date.now() - iterationStart);
+
+          lastErrorContext = {
+            errorType: 'reviewer_session_incomplete',
+            errorMessage: errorMsg,
+            consecutiveErrors,
+            expectedAction: 'Complete the QA review session and write qa_signoff before exiting.',
+          };
+
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            this.emitTyped('log', `${MAX_CONSECUTIVE_ERRORS} consecutive reviewer failures — escalating to human`);
+            await this.writeReports('max_iterations');
+            return this.outcome(false, iteration, Date.now() - startTime, 'consecutive_errors');
+          }
+
+          this.emitTyped('log', `QA reviewer ended with outcome "${reviewResult.outcome}" (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}), retrying...`);
+          continue;
+        }
+
         // Read QA signoff from implementation_plan.json
         const signoff = await this.readQASignoff();
         const status = this.resolveQAStatus(signoff);
@@ -318,10 +341,16 @@ export class QALoop extends EventEmitter {
             return this.outcome(false, iteration, Date.now() - startTime, 'cancelled');
           }
 
-          if (fixResult.outcome === 'error' || fixResult.outcome === 'auth_failure') {
-            this.emitTyped('log', `Fixer error: ${fixResult.error?.message ?? 'unknown'}`);
+          if (fixResult.outcome !== 'completed') {
+            this.emitTyped('log', `Fixer error: ${fixResult.error?.message ?? `outcome=${fixResult.outcome}`}`);
             await this.writeReports('max_iterations');
-            return this.outcome(false, iteration, Date.now() - startTime, 'error', fixResult.error?.message);
+            return this.outcome(
+              false,
+              iteration,
+              Date.now() - startTime,
+              'error',
+              fixResult.error?.message ?? `QA fixer ended with outcome: ${fixResult.outcome}`,
+            );
           }
 
           this.emitTyped('qa-fix-complete', iteration);

@@ -208,7 +208,7 @@ describe('WorkerBridge', () => {
       expect(bridge.isActive).toBe(false);
     });
 
-    it('maps max_steps outcome to exit code 0', () => {
+    it('maps max_steps outcome to exit code 1', () => {
       const exitHandler = vi.fn();
       bridge.on('exit', exitHandler);
       bridge.spawn(createConfig());
@@ -216,7 +216,18 @@ describe('WorkerBridge', () => {
       const result = createSessionResult({ outcome: 'max_steps' });
       getWorker().emit('message', { type: 'result', taskId: 'task-123', data: result });
 
-      expect(exitHandler).toHaveBeenCalledWith('task-123', 0, 'task-execution', undefined);
+      expect(exitHandler).toHaveBeenCalledWith('task-123', 1, 'task-execution', undefined);
+    });
+
+    it('maps context_window outcome to exit code 1', () => {
+      const exitHandler = vi.fn();
+      bridge.on('exit', exitHandler);
+      bridge.spawn(createConfig());
+
+      const result = createSessionResult({ outcome: 'context_window' });
+      getWorker().emit('message', { type: 'result', taskId: 'task-123', data: result });
+
+      expect(exitHandler).toHaveBeenCalledWith('task-123', 1, 'task-execution', undefined);
     });
 
     it('maps error outcome to exit code 1', () => {

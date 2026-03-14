@@ -360,7 +360,7 @@ async function runSingleSession(
 
   // End phase logging — mark as completed or failed based on outcome (skip when orchestrator manages phases)
   if (logWriter && !skipPhaseLogging) {
-    const success = sessionResult.outcome === 'completed' || sessionResult.outcome === 'max_steps' || sessionResult.outcome === 'context_window';
+    const success = sessionResult.outcome === 'completed';
     logWriter.endPhase(phase, success);
   }
   if (logWriter) {
@@ -525,7 +525,7 @@ async function runDefaultSession(
     });
   } finally {
     if (logWriter) {
-      const success = result?.outcome === 'completed' || result?.outcome === 'max_steps' || result?.outcome === 'context_window';
+      const success = result?.outcome === 'completed';
       logWriter.endPhase(defaultPhase, success ?? false);
     }
   }
@@ -1121,7 +1121,7 @@ async function runAgenticSpecOrchestrator(
     });
   } finally {
     if (logWriter) {
-      const success = result?.outcome === 'completed' || result?.outcome === 'max_steps' || result?.outcome === 'context_window';
+      const success = result?.outcome === 'completed';
       logWriter.endPhase('spec', success ?? false);
       logWriter.flush();
     }

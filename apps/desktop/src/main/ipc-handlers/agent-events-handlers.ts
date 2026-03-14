@@ -127,15 +127,16 @@ export function registerAgenteventsHandlers(
         const { task: checkTask, project: checkProject } = findTaskAndProject(taskId, projectId);
         if (checkTask && checkProject) {
           if (code === 0) {
-            // Clean exit (code 0) means the task completed successfully but the terminal
-            // event (e.g., QA_PASSED) was lost in transit. Treat as completed, not stopped.
+            // Clean exit without a terminal event is ambiguous.
+            // Do not auto-promote to QA_PASSED here: if the terminal event was lost,
+            // forcing success can incorrectly mark an incomplete run as completed.
+            // Fall back to USER_STOPPED so the task returns to a reviewable state.
+            const hasPlan = hasPlanWithSubtasks(checkProject, checkTask);
             console.warn(
               `[agent-events-handlers] Task ${taskId} still in XState ${currentState} ` +
-              `${STUCK_TASK_FALLBACK_TIMEOUT_MS}ms after clean exit (code 0), forcing QA_PASSED`
+              `${STUCK_TASK_FALLBACK_TIMEOUT_MS}ms after clean exit (code 0), forcing USER_STOPPED (hasPlan: ${hasPlan})`
             );
-            taskStateManager.handleUiEvent(taskId, {
-              type: 'QA_PASSED', iteration: 0, testsRun: {}
-            }, checkTask, checkProject);
+            taskStateManager.handleUiEvent(taskId, { type: 'USER_STOPPED', hasPlan }, checkTask, checkProject);
           } else {
             // Non-zero exit code — task was stopped or crashed
             const hasPlan = hasPlanWithSubtasks(checkProject, checkTask);

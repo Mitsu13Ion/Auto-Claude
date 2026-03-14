@@ -30,6 +30,10 @@ import { readSettingsFile } from '../settings-utils';
 import type { ProviderAccount } from '../../shared/types/provider-account';
 import { tryLoadPrompt } from '../ai/prompts/prompt-loader';
 
+const SPEC_ORCHESTRATOR_MAX_STEPS = 400;
+const BUILD_ORCHESTRATOR_MAX_STEPS = 400;
+const QA_PROCESS_MAX_STEPS = 200;
+
 /**
  * Main AgentManager - orchestrates agent process lifecycle
  * This is a slim facade that delegates to focused modules
@@ -386,7 +390,7 @@ export class AgentManager extends EventEmitter {
           content: `Task: ${taskDescription}\n\nProject directory: ${projectPath}${specDir ? `\nSpec directory: ${specDir}` : ''}${baseBranch ? `\nBase branch: ${baseBranch}` : ''}${metadata?.requireReviewBeforeCoding ? '\nRequire review before coding: true' : '\nAuto-approve: true'}`,
         },
       ],
-      maxSteps: 1000,
+      maxSteps: SPEC_ORCHESTRATOR_MAX_STEPS,
       specDir: resolvedSpecDir,
       projectDir: projectPath,
       provider: resolved.provider,
@@ -507,7 +511,7 @@ export class AgentManager extends EventEmitter {
       agentType: 'build_orchestrator' as const,
       systemPrompt,
       initialMessages,
-      maxSteps: 1000,
+      maxSteps: BUILD_ORCHESTRATOR_MAX_STEPS,
       specDir: worktreeSpecDir,
       projectDir: effectiveProjectDir,
       // When running in a worktree, sourceSpecDir points to the main project spec dir
@@ -613,7 +617,7 @@ export class AgentManager extends EventEmitter {
       agentType: 'qa_reviewer',
       systemPrompt,
       initialMessages: qaInitialMessages,
-      maxSteps: 1000,
+      maxSteps: QA_PROCESS_MAX_STEPS,
       specDir: effectiveSpecDir,
       projectDir: effectiveProjectDir,
       provider: resolved.provider,
