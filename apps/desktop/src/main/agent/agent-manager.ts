@@ -28,7 +28,8 @@ import { createOrGetWorktree } from '../ai/worktree';
 import { findTaskWorktree } from '../worktree-paths';
 import { readSettingsFile } from '../settings-utils';
 import type { ProviderAccount } from '../../shared/types/provider-account';
-import { tryLoadPrompt } from '../ai/prompts/prompt-loader';
+import type { CustomMcpServer } from '../../shared/types/project';
+import { detectProjectCapabilities, loadProjectIndex, tryLoadPrompt } from '../ai/prompts/prompt-loader';
 
 const SPEC_ORCHESTRATOR_MAX_STEPS = 400;
 const BUILD_ORCHESTRATOR_MAX_STEPS = 400;
@@ -399,11 +400,7 @@ export class AgentManager extends EventEmitter {
       baseURL: resolved.auth?.baseURL,
       configDir: resolved.configDir,
       oauthTokenFilePath: resolved.auth?.oauthTokenFilePath,
-      mcpOptions: {
-        context7Enabled: true,
-        memoryEnabled: !!process.env.GRAPHITI_MCP_URL,
-        linearEnabled: !!process.env.LINEAR_API_KEY,
-      },
+      mcpOptions: this.buildSessionMcpOptions(projectPath, 'spec_orchestrator'),
       toolContext: {
         cwd: projectPath,
         projectDir: projectPath,
@@ -523,11 +520,7 @@ export class AgentManager extends EventEmitter {
       baseURL: resolved.auth?.baseURL,
       configDir: resolved.configDir,
       oauthTokenFilePath: resolved.auth?.oauthTokenFilePath,
-      mcpOptions: {
-        context7Enabled: true,
-        memoryEnabled: !!process.env.GRAPHITI_MCP_URL,
-        linearEnabled: !!process.env.LINEAR_API_KEY,
-      },
+      mcpOptions: this.buildSessionMcpOptions(projectPath, 'build_orchestrator'),
       toolContext: {
         cwd: effectiveCwd,
         projectDir: effectiveProjectDir,
@@ -626,11 +619,7 @@ export class AgentManager extends EventEmitter {
       baseURL: resolved.auth?.baseURL,
       configDir: resolved.configDir,
       oauthTokenFilePath: resolved.auth?.oauthTokenFilePath,
-      mcpOptions: {
-        context7Enabled: true,
-        memoryEnabled: !!process.env.GRAPHITI_MCP_URL,
-        linearEnabled: !!process.env.LINEAR_API_KEY,
-      },
+      mcpOptions: this.buildSessionMcpOptions(projectPath, 'qa_reviewer'),
       toolContext: {
         cwd: effectiveCwd,
         projectDir: effectiveProjectDir,
@@ -934,6 +923,79 @@ export class AgentManager extends EventEmitter {
         shellScripts: profile.customScripts.shellScripts,
       },
     };
+  }
+
+  /**
+   * Build MCP session options from the project's resolved environment.
+   * This keeps worker MCP resolution aligned with the project-level UI settings.
+   */
+  private buildSessionMcpOptions(
+    projectPath: string,
+    agentType: SerializableSessionConfig['agentType'],
+  ): NonNullable<SerializableSessionConfig['mcpOptions']> {
+    const combinedEnv = this.processManager.getCombinedEnv(projectPath);
+    const mergedEnv: Record<string, string> = {};
+
+    for (const [key, value] of Object.entries(process.env)) {
+      if (typeof value === 'string') {
+        mergedEnv[key] = value;
+      }
+    }
+
+    Object.assign(mergedEnv, combinedEnv);
+
+    const addKey = `AGENT_MCP_${agentType}_ADD`;
+    const removeKey = `AGENT_MCP_${agentType}_REMOVE`;
+    const customServers = this.parseCustomMcpServers(mergedEnv['CUSTOM_MCP_SERVERS']);
+    const projectIndex = loadProjectIndex(projectPath);
+    const projectCapabilities = Object.keys(projectIndex).length > 0
+      ? detectProjectCapabilities(projectIndex)
+      : null;
+    const linearApiKey = mergedEnv['LINEAR_API_KEY']?.trim();
+
+    return {
+      context7Enabled: mergedEnv['CONTEXT7_ENABLED']?.toLowerCase() !== 'false',
+      memoryEnabled: mergedEnv['GRAPHITI_ENABLED']?.toLowerCase() === 'true',
+      linearEnabled: mergedEnv['LINEAR_MCP_ENABLED']?.toLowerCase() !== 'false' && !!linearApiKey,
+      electronMcpEnabled: mergedEnv['ELECTRON_MCP_ENABLED']?.toLowerCase() === 'true',
+      puppeteerMcpEnabled: mergedEnv['PUPPETEER_MCP_ENABLED']?.toLowerCase() === 'true',
+      projectCapabilities: projectCapabilities
+        ? {
+            is_electron: projectCapabilities.is_electron,
+            is_web_frontend: projectCapabilities.is_web_frontend,
+          }
+        : undefined,
+      agentMcpAdd: mergedEnv[addKey],
+      agentMcpRemove: mergedEnv[removeKey],
+      customServers: customServers.length > 0 ? customServers : undefined,
+      mcpEnv: this.buildMcpRuntimeEnv(mergedEnv),
+    };
+  }
+
+  private buildMcpRuntimeEnv(env: Record<string, string>): Record<string, string> | undefined {
+    const runtimeEnv: Record<string, string> = {};
+
+    for (const key of ['GRAPHITI_MCP_URL', 'LINEAR_API_KEY']) {
+      const value = env[key];
+      if (value) {
+        runtimeEnv[key] = value;
+      }
+    }
+
+    return Object.keys(runtimeEnv).length > 0 ? runtimeEnv : undefined;
+  }
+
+  private parseCustomMcpServers(rawValue: string | undefined): CustomMcpServer[] {
+    if (!rawValue) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(rawValue);
+      return Array.isArray(parsed) ? parsed as CustomMcpServer[] : [];
+    } catch {
+      return [];
+    }
   }
 
   /**

@@ -10,6 +10,7 @@
 import type { ExecutionProgressData, ProcessType } from '../../../main/agent/types';
 import type { SessionConfig, SessionResult, StreamEvent } from '../session/types';
 import type { RunnerOptions } from '../session/runner';
+import type { CustomMcpServer } from '../../../shared/types/project';
 
 // =============================================================================
 // Worker Configuration
@@ -74,6 +75,8 @@ export interface SerializableSessionConfig {
     };
     agentMcpAdd?: string;
     agentMcpRemove?: string;
+    customServers?: CustomMcpServer[];
+    mcpEnv?: Record<string, string>;
   };
   /** Enable agentic orchestration mode where the AI drives the pipeline via SpawnSubagent tool */
   useAgenticOrchestration?: boolean;

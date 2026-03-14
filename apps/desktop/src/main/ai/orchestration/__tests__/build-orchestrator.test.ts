@@ -87,4 +87,80 @@ describe('BuildOrchestrator', () => {
       expect.objectContaining({ agentType: 'qa_reviewer' }),
     );
   }, 15_000);
+
+  it('classifies a replanning failure as a planning failure when the existing plan is unusable', async () => {
+    await writeFile(
+      join(specDir, 'implementation_plan.json'),
+      JSON.stringify({
+        feature: 'broken feature',
+        phases: [],
+      }, null, 2),
+    );
+
+    const orchestrator = new BuildOrchestrator({
+      specDir,
+      projectDir,
+      generatePrompt: vi.fn().mockResolvedValue('prompt'),
+      runSession: vi.fn().mockResolvedValue(createSessionResult('error', {
+        error: { code: 'invalid_plan', message: 'planner failed', retryable: false },
+      })),
+    });
+
+    const outcome = await orchestrator.run();
+
+    expect(outcome.success).toBe(false);
+    expect(outcome.planningCompleted).toBe(false);
+    expect(outcome.codingCompleted).toBe(false);
+    expect(outcome.error).toContain('planner failed');
+  });
+
+  it('reruns planning when an existing implementation plan has no subtasks', async () => {
+    await writeFile(
+      join(specDir, 'implementation_plan.json'),
+      JSON.stringify({
+        feature: 'empty feature',
+        phases: [],
+      }, null, 2),
+    );
+
+    const runSession = vi.fn(async (config: SessionRunConfig) => {
+      if (config.agentType === 'planner') {
+        await writeFile(
+          join(specDir, 'implementation_plan.json'),
+          JSON.stringify({
+            feature: 'replanned feature',
+            phases: [
+              {
+                id: 'phase-1',
+                name: 'Implementation',
+                subtasks: [
+                  { id: 'subtask-1', description: 'Implement feature', status: 'pending' },
+                ],
+              },
+            ],
+          }, null, 2),
+        );
+      } else if (config.agentType === 'qa_reviewer') {
+        await writeFile(join(specDir, 'qa_report.md'), 'Status: PASSED\n');
+      }
+      return createSessionResult('completed');
+    });
+
+    const orchestrator = new BuildOrchestrator({
+      specDir,
+      projectDir,
+      generatePrompt: vi.fn().mockResolvedValue('prompt'),
+      runSession,
+    });
+
+    const outcome = await orchestrator.run();
+
+    expect(outcome.success).toBe(true);
+    expect(runSession).toHaveBeenCalledWith(
+      expect.objectContaining({ agentType: 'planner' }),
+    );
+    expect(runSession).toHaveBeenCalledWith(
+      expect.objectContaining({ agentType: 'coder' }),
+    );
+  }, 15_000);
 });

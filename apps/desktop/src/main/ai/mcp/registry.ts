@@ -9,6 +9,7 @@
  * and whether it's enabled by default.
  */
 
+import type { CustomMcpServer } from '../../../shared/types/project';
 import type { McpServerConfig, McpServerId } from './types';
 
 // =============================================================================
@@ -118,6 +119,37 @@ function createAutoClaudeServer(specDir: string): McpServerConfig {
   };
 }
 
+function createCustomServer(server: CustomMcpServer): McpServerConfig | null {
+  if (server.type === 'command') {
+    if (!server.command) return null;
+    return {
+      id: server.id,
+      name: server.name,
+      description: server.description,
+      enabledByDefault: false,
+      transport: {
+        type: 'stdio',
+        command: server.command,
+        args: server.args ?? [],
+      },
+    };
+  }
+
+  if (!server.url) return null;
+
+  return {
+    id: server.id,
+    name: server.name,
+    description: server.description,
+    enabledByDefault: false,
+    transport: {
+      type: 'streamable-http',
+      url: server.url,
+      headers: server.headers,
+    },
+  };
+}
+
 // =============================================================================
 // Registry
 // =============================================================================
@@ -132,6 +164,8 @@ export interface McpRegistryOptions {
   linearApiKey?: string;
   /** Environment variables for server processes */
   env?: Record<string, string>;
+  /** User-defined MCP servers available for resolution */
+  customServers?: CustomMcpServer[];
 }
 
 /**
@@ -180,8 +214,13 @@ export function getMcpServerConfig(
       return createAutoClaudeServer(specDir);
     }
 
-    default:
+    default: {
+      const customServer = options.customServers?.find((server) => server.id === serverId);
+      if (customServer) {
+        return createCustomServer(customServer);
+      }
       return null;
+    }
   }
 }
 

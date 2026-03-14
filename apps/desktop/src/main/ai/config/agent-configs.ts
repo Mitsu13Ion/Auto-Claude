@@ -246,7 +246,7 @@ export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
    */
   build_orchestrator: {
     tools: [...ALL_BUILTIN_TOOLS, 'SpawnSubagent'],
-    mcpServers: ['context7', 'memory', 'auto-claude'],
+    mcpServers: ['context7', 'memory'],
     mcpServersOptional: ['linear'],
     autoClaudeTools: [
       TOOL_GET_BUILD_PROGRESS,
@@ -263,7 +263,7 @@ export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
   // ═══════════════════════════════════════════════════════════════════════
   planner: {
     tools: [...ALL_BUILTIN_TOOLS],
-    mcpServers: ['context7', 'memory', 'auto-claude'],
+    mcpServers: ['context7', 'memory'],
     mcpServersOptional: ['linear'],
     autoClaudeTools: [
       TOOL_GET_BUILD_PROGRESS,
@@ -274,7 +274,7 @@ export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
   },
   coder: {
     tools: [...ALL_BUILTIN_TOOLS],
-    mcpServers: ['context7', 'memory', 'auto-claude'],
+    mcpServers: ['context7', 'memory'],
     mcpServersOptional: ['linear'],
     autoClaudeTools: [
       TOOL_UPDATE_SUBTASK_STATUS,
@@ -291,7 +291,7 @@ export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
   // ═══════════════════════════════════════════════════════════════════════
   qa_reviewer: {
     tools: [...ALL_BUILTIN_TOOLS],
-    mcpServers: ['context7', 'memory', 'auto-claude', 'browser'],
+    mcpServers: ['context7', 'memory', 'browser'],
     mcpServersOptional: ['linear'],
     autoClaudeTools: [
       TOOL_GET_BUILD_PROGRESS,
@@ -302,7 +302,7 @@ export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
   },
   qa_fixer: {
     tools: [...ALL_BUILTIN_TOOLS],
-    mcpServers: ['context7', 'memory', 'auto-claude', 'browser'],
+    mcpServers: ['context7', 'memory', 'browser'],
     mcpServersOptional: ['linear'],
     autoClaudeTools: [
       TOOL_UPDATE_SUBTASK_STATUS,

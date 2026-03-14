@@ -240,6 +240,21 @@ describe('createMcpClientsForAgent', () => {
 
     expect(mockGetRequiredMcpServers).toHaveBeenCalledWith('qa_reviewer', resolveOptions);
   });
+
+  it('passes registryOptions to resolveMcpServers', async () => {
+    mockGetRequiredMcpServers.mockReturnValueOnce([]);
+    mockResolveMcpServers.mockReturnValueOnce([]);
+
+    const registryOptions = {
+      specDir: '/project/.auto-claude/specs/001-auth',
+      env: { LINEAR_API_KEY: 'lin_test', GRAPHITI_MCP_URL: 'http://memory.local' },
+      customServers: [{ id: 'custom-docs', name: 'Custom Docs', type: 'http' as const, url: 'https://mcp.example.com' }],
+    };
+
+    await createMcpClientsForAgent('qa_reviewer', {}, registryOptions);
+
+    expect(mockResolveMcpServers).toHaveBeenCalledWith([], registryOptions);
+  });
 });
 
 // =============================================================================

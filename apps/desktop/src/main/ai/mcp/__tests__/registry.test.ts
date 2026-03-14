@@ -132,6 +132,26 @@ describe('getMcpServerConfig', () => {
       const config = getMcpServerConfig('nonexistent-server');
       expect(config).toBeNull();
     });
+
+    it('resolves a custom HTTP server when provided in options', () => {
+      const config = getMcpServerConfig('custom-docs', {
+        customServers: [{
+          id: 'custom-docs',
+          name: 'Custom Docs',
+          type: 'http',
+          url: 'https://mcp.example.com',
+          headers: { Authorization: 'Bearer token' },
+        }],
+      });
+
+      expect(config).not.toBeNull();
+      expect(config?.id).toBe('custom-docs');
+      expect(config?.transport.type).toBe('streamable-http');
+      if (config?.transport.type === 'streamable-http') {
+        expect(config.transport.url).toBe('https://mcp.example.com');
+        expect(config.transport.headers).toEqual({ Authorization: 'Bearer token' });
+      }
+    });
   });
 });
 
@@ -180,6 +200,26 @@ describe('resolveMcpServers', () => {
     expect(configs).toHaveLength(1);
     if (configs[0].transport.type === 'stdio') {
       expect(configs[0].transport.env?.SPEC_DIR).toBe(specDir);
+    }
+  });
+
+  it('resolves custom command servers from registry options', () => {
+    const configs = resolveMcpServers(['custom-lint'], {
+      customServers: [{
+        id: 'custom-lint',
+        name: 'Custom Lint',
+        type: 'command',
+        command: 'npx',
+        args: ['-y', 'custom-lint-mcp'],
+      }],
+    });
+
+    expect(configs).toHaveLength(1);
+    expect(configs[0].id).toBe('custom-lint');
+    expect(configs[0].transport.type).toBe('stdio');
+    if (configs[0].transport.type === 'stdio') {
+      expect(configs[0].transport.command).toBe('npx');
+      expect(configs[0].transport.args).toEqual(['-y', 'custom-lint-mcp']);
     }
   });
 });

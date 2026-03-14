@@ -386,6 +386,7 @@ async function run(): Promise<void> {
 
     // Initialize MCP clients from session config
     try {
+      const customServers = session.mcpOptions?.customServers;
       mcpClients = await createMcpClientsForAgent(session.agentType, {
         context7Enabled: session.mcpOptions?.context7Enabled ?? true,
         memoryEnabled: session.mcpOptions?.memoryEnabled ?? false,
@@ -395,6 +396,11 @@ async function run(): Promise<void> {
         projectCapabilities: session.mcpOptions?.projectCapabilities,
         agentMcpAdd: session.mcpOptions?.agentMcpAdd,
         agentMcpRemove: session.mcpOptions?.agentMcpRemove,
+        customServerIds: customServers?.map((server) => server.id).filter(Boolean),
+      }, {
+        specDir: session.specDir,
+        env: session.mcpOptions?.mcpEnv,
+        customServers,
       });
       if (mcpClients.length > 0) {
         postLog(`MCP initialized: ${mcpClients.map(c => c.serverId).join(', ')}`);
@@ -708,8 +714,10 @@ async function runBuildOrchestrator(
       iteration: outcome.totalIterations,
       maxIterations: 3,
     });
+  } else if (!outcome.planningCompleted || outcome.finalPhase === 'planning') {
+    postTaskEvent('PLANNING_FAILED', { error: outcome.error, recoverable: false });
   } else {
-    // Pre-QA failure (planning or coding phase)
+    // Pre-QA coding failure
     postTaskEvent('CODING_FAILED', { error: outcome.error });
   }
 

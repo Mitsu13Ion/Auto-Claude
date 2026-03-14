@@ -161,6 +161,8 @@ export interface BuildOrchestratorEvents {
 export interface BuildOutcome {
   /** Whether the build succeeded */
   success: boolean;
+  /** Whether planning is complete or a valid plan was confirmed */
+  planningCompleted: boolean;
   /** Final phase reached */
   finalPhase: ExecutionPhase;
   /** Total iterations executed */
@@ -243,9 +245,9 @@ export class BuildOrchestrator extends EventEmitter {
 
     try {
       // Determine starting phase
-      const isFirstRun = await this.isFirstRun();
+      const needsPlanning = await this.needsPlanning();
 
-      if (isFirstRun) {
+      if (needsPlanning) {
         // Planning phase
         const planResult = await this.runPlanningPhase();
         if (!planResult.success) {
@@ -271,6 +273,10 @@ export class BuildOrchestrator extends EventEmitter {
         return this.buildOutcome(false, Date.now() - startTime,
           `Implementation plan is invalid and cannot be executed: ${errorDetail}`);
       }
+
+      // A valid implementation plan is enough to consider planning complete for
+      // resumed executions, even if this run did not invoke the planner agent.
+      this.markPhaseCompleted('planning');
 
       // Check if build is already complete
       if (await this.isBuildComplete()) {
@@ -689,11 +695,16 @@ export class BuildOrchestrator extends EventEmitter {
   /**
    * Check if this is a first run (no implementation plan exists).
    */
-  private async isFirstRun(): Promise<boolean> {
+  private async needsPlanning(): Promise<boolean> {
     const planPath = join(this.config.specDir, 'implementation_plan.json');
     try {
-      await readFile(planPath, 'utf-8');
-      return false;
+      const raw = await readFile(planPath, 'utf-8');
+      const plan = safeParseJson<ImplementationPlan>(raw);
+      if (!plan || !Array.isArray(plan.phases) || plan.phases.length === 0) {
+        return true;
+      }
+
+      return !plan.phases.some((phase) => Array.isArray(phase.subtasks) && phase.subtasks.length > 0);
     } catch {
       return true;
     }
@@ -776,6 +787,7 @@ export class BuildOrchestrator extends EventEmitter {
   private buildOutcome(success: boolean, durationMs: number, error?: string): BuildOutcome {
     const outcome: BuildOutcome = {
       success,
+      planningCompleted: this.completedPhases.includes('planning'),
       finalPhase: this.currentPhase,
       totalIterations: this.iteration,
       durationMs,

@@ -167,6 +167,19 @@ describe('ToolRegistry', () => {
     const tools = registry.getToolsForAgent('merge_resolver', context);
     expect(Object.keys(tools)).toHaveLength(0);
   });
+
+  it('should include auto-claude tools allowed by the agent config', () => {
+    const registry = new ToolRegistry();
+    registry.registerTool(
+      'mcp__auto-claude__get_build_progress',
+      createMockDefinedTool('mcp__auto-claude__get_build_progress'),
+    );
+
+    const context = createMockContext();
+    const tools = registry.getToolsForAgent('planner', context);
+
+    expect(Object.keys(tools)).toContain('mcp__auto-claude__get_build_progress');
+  });
 });
 
 // =============================================================================
@@ -251,12 +264,12 @@ describe('getRequiredMcpServers (registry)', () => {
     expect(servers).toContain('context7');
   });
 
-  it('should support per-agent MCP REMOVE overrides but protect auto-claude', () => {
+  it('should support per-agent MCP REMOVE overrides without disturbing builtin auto-claude tools', () => {
     const servers = getRequiredMcpServers('coder', {
       memoryEnabled: true,
       mcpConfig: { AGENT_MCP_coder_REMOVE: 'auto-claude,memory' },
     });
-    expect(servers).toContain('auto-claude');
     expect(servers).not.toContain('memory');
+    expect(servers).not.toContain('auto-claude');
   });
 });
