@@ -22,7 +22,15 @@ import { Badge } from '../ui/badge';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '../ui/collapsible';
 import { cn } from '../../lib/utils';
 import { useSettingsStore } from '../../stores/settings-store';
-import type { Task, TaskLogs, TaskLogPhase, TaskPhaseLog, TaskLogEntry, TaskMetadata } from '../../../shared/types';
+import type {
+  Task,
+  TaskLogs,
+  TaskLogPhase,
+  TaskPhaseLog,
+  TaskLogEntry,
+  TaskMetadata,
+  TaskRunMetrics,
+} from '../../../shared/types';
 import type { PhaseModelConfig, ThinkingLevel } from '../../../shared/types/settings';
 import type { BuiltinProvider } from '../../../shared/types/provider-account';
 import { getProviderModelLabel } from '@shared/utils/model-display';
@@ -118,6 +126,17 @@ function normalizeErrorLog(log: string): string {
   return log.replace(/^\[ERROR\]\s*/, '').trim();
 }
 
+export interface TaskRunSummary {
+  sessionCount: number;
+  stepCount: number;
+  toolCallCount: number;
+  continuationCount: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  budgetLimitTokens?: number;
+}
+
 export function getPhaseErrorMessages(phaseLogs: TaskLogs | null): string[] {
   if (!phaseLogs) {
     return [];
@@ -152,6 +171,45 @@ export function getLatestTaskErrorMessage(task: Task, phaseLogs: TaskLogs | null
   return legacyErrors[legacyErrors.length - 1] ?? null;
 }
 
+export function getTaskRunSummary(phaseLogs: TaskLogs | null): TaskRunSummary | null {
+  if (!phaseLogs) {
+    return null;
+  }
+
+  const metricsEntries = (['planning', 'coding', 'validation'] as TaskLogPhase[])
+    .flatMap((phase) => phaseLogs.phases[phase]?.entries ?? [])
+    .map((entry) => entry.metrics)
+    .filter((metrics): metrics is TaskRunMetrics => Boolean(metrics));
+
+  if (metricsEntries.length === 0) {
+    return null;
+  }
+
+  return metricsEntries.reduce<TaskRunSummary>((summary, metrics) => ({
+    sessionCount: summary.sessionCount + 1,
+    stepCount: summary.stepCount + metrics.stepsExecuted,
+    toolCallCount: summary.toolCallCount + metrics.toolCallCount,
+    continuationCount: summary.continuationCount + metrics.continuationCount,
+    promptTokens: summary.promptTokens + metrics.promptTokens,
+    completionTokens: summary.completionTokens + metrics.completionTokens,
+    totalTokens: summary.totalTokens + metrics.totalTokens,
+    budgetLimitTokens: Math.max(summary.budgetLimitTokens ?? 0, metrics.budgetLimitTokens ?? 0) || undefined,
+  }), {
+    sessionCount: 0,
+    stepCount: 0,
+    toolCallCount: 0,
+    continuationCount: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    budgetLimitTokens: undefined,
+  });
+}
+
+function formatMetricValue(value: number): string {
+  return new Intl.NumberFormat().format(value);
+}
+
 export function TaskLogs({
   task,
   phaseLogs,
@@ -165,6 +223,10 @@ export function TaskLogs({
 }: TaskLogsProps) {
   const latestErrorMessage = getLatestTaskErrorMessage(task, phaseLogs);
   const unmatchedLegacyErrors = getUnmatchedLegacyErrorMessages(task, phaseLogs);
+  const taskRunSummary = getTaskRunSummary(phaseLogs);
+  const budgetUsagePercent = taskRunSummary?.budgetLimitTokens
+    ? Math.min(100, Math.round((taskRunSummary.totalTokens / taskRunSummary.budgetLimitTokens) * 100))
+    : null;
 
   return (
     <div
@@ -173,6 +235,25 @@ export function TaskLogs({
       onScroll={onLogsScroll}
     >
       <div className="p-4 space-y-2">
+        {taskRunSummary && (
+          <div className="rounded-lg border border-border/60 bg-secondary/20 px-3 py-2">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Task execution usage</p>
+                <p className="text-xs text-muted-foreground">
+                  {formatMetricValue(taskRunSummary.totalTokens)} tokens
+                  {' '}across {taskRunSummary.sessionCount} sessions
+                  {budgetUsagePercent !== null ? ` (${budgetUsagePercent}% of task budget)` : ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                <span>{formatMetricValue(taskRunSummary.stepCount)} steps</span>
+                <span>{formatMetricValue(taskRunSummary.toolCallCount)} tools</span>
+                <span>{formatMetricValue(taskRunSummary.continuationCount)} continuations</span>
+              </div>
+            </div>
+          </div>
+        )}
         {latestErrorMessage && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2">
             <div className="flex items-start gap-2">
@@ -529,6 +610,27 @@ function LogEntry({ entry }: LogEntryProps) {
       <div className="flex items-start gap-2 text-xs text-info bg-info/10 rounded-md px-2 py-1">
         <Info className="h-3 w-3 mt-0.5 shrink-0" />
         <span className="break-words flex-1">{entry.content}</span>
+        <SubphaseBadge />
+      </div>
+    );
+  }
+
+  if (entry.type === 'metrics' && entry.metrics) {
+    return (
+      <div className="flex items-start gap-2 text-xs text-muted-foreground bg-secondary/30 rounded-md px-2 py-1">
+        <Cpu className="h-3 w-3 mt-0.5 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="break-words">{entry.content}</div>
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground/80">
+            <span>Prompt {formatMetricValue(entry.metrics.promptTokens)}</span>
+            <span>Completion {formatMetricValue(entry.metrics.completionTokens)}</span>
+            {entry.metrics.budgetLimitTokens !== undefined && entry.metrics.cumulativeTokens !== undefined && (
+              <span>
+                Budget {formatMetricValue(entry.metrics.cumulativeTokens)} / {formatMetricValue(entry.metrics.budgetLimitTokens)}
+              </span>
+            )}
+          </div>
+        </div>
         <SubphaseBadge />
       </div>
     );

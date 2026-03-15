@@ -1,9 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('@shared/utils/model-display', () => ({
+  getProviderModelLabel: (model: string) => model,
+}));
 
 import type { Task, TaskLogs as TaskLogsType } from '../../../shared/types';
 import {
   getLatestTaskErrorMessage,
   getPhaseErrorMessages,
+  getTaskRunSummary,
   getUnmatchedLegacyErrorMessages,
 } from './TaskLogs';
 
@@ -73,5 +78,54 @@ describe('TaskLogs error helpers', () => {
     expect(getUnmatchedLegacyErrorMessages(task, phaseLogs)).toEqual([
       'Worker crashed before phase log flush',
     ]);
+  });
+
+  it('aggregates persisted session metrics for the task usage summary', () => {
+    const phaseLogs = createPhaseLogs();
+    phaseLogs.phases.planning.entries.push({
+      timestamp: new Date().toISOString(),
+      type: 'metrics',
+      content: 'Session 1 (planner)',
+      phase: 'planning',
+      metrics: {
+        agentType: 'planner',
+        sessionNumber: 1,
+        stepsExecuted: 4,
+        toolCallCount: 2,
+        continuationCount: 0,
+        promptTokens: 1200,
+        completionTokens: 300,
+        totalTokens: 1500,
+        budgetLimitTokens: 900000,
+      },
+    });
+    phaseLogs.phases.coding.entries.push({
+      timestamp: new Date().toISOString(),
+      type: 'metrics',
+      content: 'Session 2 (coder)',
+      phase: 'coding',
+      metrics: {
+        agentType: 'coder',
+        sessionNumber: 2,
+        stepsExecuted: 8,
+        toolCallCount: 4,
+        continuationCount: 1,
+        promptTokens: 4000,
+        completionTokens: 1000,
+        totalTokens: 5000,
+        budgetLimitTokens: 900000,
+      },
+    });
+
+    expect(getTaskRunSummary(phaseLogs)).toEqual({
+      sessionCount: 2,
+      stepCount: 12,
+      toolCallCount: 6,
+      continuationCount: 1,
+      promptTokens: 5200,
+      completionTokens: 1300,
+      totalTokens: 6500,
+      budgetLimitTokens: 900000,
+    });
   });
 });
