@@ -216,6 +216,86 @@ describe('Bash Tool', () => {
     );
   });
 
+  it('should wrap foreground commands with tokf when configured in context', async () => {
+    mockIsWindows.mockReturnValue(false);
+    setupExecFile('filtered output', '', 0);
+
+    await bashTool.config.execute(
+      { command: 'git status' },
+      {
+        ...baseContext,
+        tokf: { path: '/usr/local/bin/tokf' },
+      },
+    );
+
+    expect(mockExecFile).toHaveBeenCalledWith(
+      '/usr/local/bin/tokf',
+      ['run', '--no-mask-exit-code', '/bin/bash', '-c', 'git status'],
+      expect.objectContaining({ cwd: '/test/project' }),
+      expect.any(Function),
+    );
+  });
+
+  it('should not wrap background commands with tokf', async () => {
+    mockIsWindows.mockReturnValue(false);
+    setupExecFile('', '', 0);
+
+    await bashTool.config.execute(
+      { command: 'sleep 5', run_in_background: true },
+      {
+        ...baseContext,
+        tokf: { path: '/usr/local/bin/tokf' },
+      },
+    );
+
+    expect(mockExecFile).toHaveBeenCalledWith(
+      '/bin/bash',
+      ['-c', 'sleep 5'],
+      expect.objectContaining({ cwd: '/test/project' }),
+      expect.any(Function),
+    );
+  });
+
+  it('should not double-wrap commands that already invoke tokf via absolute path', async () => {
+    mockIsWindows.mockReturnValue(false);
+    setupExecFile('filtered output', '', 0);
+
+    await bashTool.config.execute(
+      { command: '/home/linuxbrew/.linuxbrew/bin/tokf run --no-mask-exit-code /bin/bash -c "git status"' },
+      {
+        ...baseContext,
+        tokf: { path: '/usr/local/bin/tokf' },
+      },
+    );
+
+    expect(mockExecFile).toHaveBeenCalledWith(
+      '/bin/bash',
+      ['-c', '/home/linuxbrew/.linuxbrew/bin/tokf run --no-mask-exit-code /bin/bash -c "git status"'],
+      expect.objectContaining({ cwd: '/test/project' }),
+      expect.any(Function),
+    );
+  });
+
+  it('should not double-wrap commands that invoke tokf via env', async () => {
+    mockIsWindows.mockReturnValue(false);
+    setupExecFile('filtered output', '', 0);
+
+    await bashTool.config.execute(
+      { command: 'env TOKF_LOG=debug tokf run --no-mask-exit-code /bin/bash -c "git status"' },
+      {
+        ...baseContext,
+        tokf: { path: '/usr/local/bin/tokf' },
+      },
+    );
+
+    expect(mockExecFile).toHaveBeenCalledWith(
+      '/bin/bash',
+      ['-c', 'env TOKF_LOG=debug tokf run --no-mask-exit-code /bin/bash -c "git status"'],
+      expect.objectContaining({ cwd: '/test/project' }),
+      expect.any(Function),
+    );
+  });
+
   it('should use cmd.exe args (/c) on Windows when bash not found', async () => {
     // The Windows branch uses /c rather than -c for cmd.exe.
     // We verify the logic by checking that bash uses -c on non-Windows (already tested

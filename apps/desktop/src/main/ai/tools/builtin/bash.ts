@@ -8,6 +8,7 @@
  */
 
 import { execFile } from 'node:child_process';
+import path from 'node:path';
 import { z } from 'zod/v3';
 
 import { findExecutable, isWindows, killProcessGracefully } from '../../../platform/index';
@@ -62,20 +63,71 @@ function resolveShell(): string {
   return '/bin/bash';
 }
 
+function resolveShellArgs(shell: string, command: string): string[] {
+  return isWindows() && shell.toLowerCase().endsWith('cmd.exe')
+    ? ['/c', command]
+    : ['-c', command];
+}
+
+function startsWithTokfCommand(command: string): boolean {
+  const trimmed = command.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  const tokens = trimmed.match(/(?:"[^"]*"|'[^']*'|\\.|[^\s])+/g) ?? [];
+  let index = 0;
+
+  const isEnvAssignment = (token: string) => /^[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S+)$/.test(token);
+
+  while (index < tokens.length && isEnvAssignment(tokens[index])) {
+    index++;
+  }
+
+  if (tokens[index] === 'env') {
+    index++;
+    while (index < tokens.length && isEnvAssignment(tokens[index])) {
+      index++;
+    }
+  }
+
+  const commandToken = tokens[index]?.replace(/^['"]|['"]$/g, '');
+  if (!commandToken) {
+    return false;
+  }
+
+  const posixBase = path.posix.basename(commandToken);
+  const winBase = path.win32.basename(commandToken);
+  return [posixBase, winBase].some(base => /^tokf(?:\.(?:exe|cmd|bat))?$/i.test(base));
+}
+
+function shouldUseTokf(command: string, tokfPath: string | undefined, runInBackground?: boolean): boolean {
+  if (!tokfPath || runInBackground) {
+    return false;
+  }
+
+  return !startsWithTokfCommand(command);
+}
+
 function executeCommand(
   command: string,
   cwd: string,
   timeoutMs: number,
+  tokfPath?: string,
+  runInBackground?: boolean,
   abortSignal?: AbortSignal,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const shell = resolveShell();
-  const args = isWindows() && shell.toLowerCase().endsWith('cmd.exe')
-    ? ['/c', command]
-    : ['-c', command];
+  const shellArgs = resolveShellArgs(shell, command);
+  const useTokf = shouldUseTokf(command, tokfPath, runInBackground);
+  const executable = useTokf ? tokfPath! : shell;
+  const args = useTokf
+    ? ['run', '--no-mask-exit-code', shell, ...shellArgs]
+    : shellArgs;
 
   return new Promise((resolve) => {
     const child = execFile(
-      shell,
+      executable,
       args,
       {
         cwd,
@@ -144,7 +196,7 @@ export const bashTool = Tool.define({
 
     if (run_in_background) {
       // Fire-and-forget for background commands
-      executeCommand(command, context.cwd, timeoutMs, context.abortSignal);
+      executeCommand(command, context.cwd, timeoutMs, context.tokf?.path, true, context.abortSignal);
       return `Command started in background: ${command}`;
     }
 
@@ -152,6 +204,8 @@ export const bashTool = Tool.define({
       command,
       context.cwd,
       timeoutMs,
+      context.tokf?.path,
+      false,
       context.abortSignal,
     );
 

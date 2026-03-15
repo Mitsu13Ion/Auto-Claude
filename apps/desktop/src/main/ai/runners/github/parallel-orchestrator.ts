@@ -42,6 +42,7 @@ import type {
 import { ReviewCategory, ReviewSeverity } from './pr-review-engine';
 import { loadPrompt } from '../../prompts/prompt-loader';
 import { buildToolRegistry } from '../../tools/build-registry';
+import { resolveTokfToolConfig } from '../../tools/tokf';
 import { getSecurityProfile } from '../../security/security-profile';
 import { getAgentConfig, type AgentType } from '../../config/agent-configs';
 import type { ToolContext } from '../../tools/types';
@@ -520,6 +521,7 @@ export class ParallelOrchestratorReviewer {
       cwd: this.config.projectDir,
       projectDir: this.config.projectDir,
       specDir: '',
+      tokf: resolveTokfToolConfig(),
       securityProfile: this.securityProfile,
       abortSignal,
     };
@@ -710,6 +712,7 @@ export class ParallelOrchestratorReviewer {
       cwd: this.config.projectDir,
       projectDir: this.config.projectDir,
       specDir: '',
+      tokf: resolveTokfToolConfig(),
       securityProfile: this.securityProfile,
       abortSignal,
     };

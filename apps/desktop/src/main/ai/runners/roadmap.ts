@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { createSimpleClient } from '../client/factory';
 import type { SimpleClientResult } from '../client/types';
 import { buildToolRegistry } from '../tools/build-registry';
+import { resolveTokfToolConfig } from '../tools/tokf';
 import type { ToolContext } from '../tools/types';
 import type { ModelShorthand, ThinkingLevel } from '../config/types';
 import type { SecurityProfile } from '../security/bash-validator';
@@ -455,6 +456,7 @@ export async function runRoadmapGeneration(
     cwd: projectDir,
     projectDir,
     specDir: join(projectDir, '.auto-claude', 'specs'),
+    tokf: resolveTokfToolConfig(),
     securityProfile: null as unknown as SecurityProfile,
     abortSignal,
   };

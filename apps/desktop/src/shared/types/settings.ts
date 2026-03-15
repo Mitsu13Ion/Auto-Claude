@@ -269,9 +269,11 @@ export interface AppSettings {
   githubCLIPath?: string;
   gitlabCLIPath?: string;
   claudePath?: string;
+  tokfPath?: string;
   autoBuildPath?: string;
   autoUpdateAutoBuild: boolean;
   autoNameTerminals: boolean;
+  tokfEnabled?: boolean;
   notifications: NotificationSettings;
   // Global API keys (used as defaults for all projects)
   globalOpenAIApiKey?: string;
@@ -362,5 +364,4 @@ export interface AppSettings {
 
 // GPU acceleration mode for terminal WebGL rendering
 export type GpuAcceleration = 'auto' | 'on' | 'off';
-
 

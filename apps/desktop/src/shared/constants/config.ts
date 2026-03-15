@@ -38,8 +38,10 @@ export const DEFAULT_APP_SETTINGS = {
   githubCLIPath: undefined as string | undefined,
   gitlabCLIPath: undefined as string | undefined,
   autoBuildPath: undefined as string | undefined,
+  tokfPath: undefined as string | undefined,
   autoUpdateAutoBuild: true,
   autoNameTerminals: true,
+  tokfEnabled: false,
   onboardingCompleted: false,
   notifications: {
     onTaskComplete: true,

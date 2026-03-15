@@ -195,6 +195,7 @@ function buildToolContext(session: SerializableSessionConfig, securityProfile: S
     cwd: session.toolContext.cwd,
     projectDir: session.toolContext.projectDir,
     specDir: session.toolContext.specDir,
+    tokf: session.toolContext.tokf,
     securityProfile,
     abortSignal: abortController.signal,
   };
@@ -248,6 +249,12 @@ let cachedProjectInstructionsSource: string | null = null;
  * Assemble a full system prompt by loading the base prompt and injecting
  * project instructions (AGENTS.md or CLAUDE.md fallback). Provider-agnostic —
  * injected for ALL AI providers, not just Anthropic.
+ *
+ * TODO: Extend prompt assembly to inject agent-specific reusable skills
+ * selected from Settings (for example planner/coder/qa_* skill sets), using
+ * config passed from AgentManager in the same spirit as per-agent MCP
+ * activation. Skills should augment prompts without affecting agents that do
+ * not opt into them.
  */
 async function assemblePrompt(
   promptName: string,

@@ -30,6 +30,7 @@ import { readSettingsFile } from '../settings-utils';
 import type { ProviderAccount } from '../../shared/types/provider-account';
 import type { CustomMcpServer } from '../../shared/types/project';
 import { detectProjectCapabilities, loadProjectIndex, tryLoadPrompt } from '../ai/prompts/prompt-loader';
+import { resolveTokfToolConfig } from '../ai/tools/tokf';
 
 const SPEC_ORCHESTRATOR_MAX_STEPS = 400;
 const BUILD_ORCHESTRATOR_MAX_STEPS = 400;
@@ -405,6 +406,7 @@ export class AgentManager extends EventEmitter {
         cwd: projectPath,
         projectDir: projectPath,
         specDir: resolvedSpecDir,
+        tokf: resolveTokfToolConfig(),
         securityProfile: this.serializeSecurityProfile(projectPath),
       },
     };
@@ -525,6 +527,7 @@ export class AgentManager extends EventEmitter {
         cwd: effectiveCwd,
         projectDir: effectiveProjectDir,
         specDir: worktreeSpecDir,
+        tokf: resolveTokfToolConfig(),
         securityProfile: this.serializeSecurityProfile(effectiveProjectDir),
       },
     };
@@ -624,6 +627,7 @@ export class AgentManager extends EventEmitter {
         cwd: effectiveCwd,
         projectDir: effectiveProjectDir,
         specDir: effectiveSpecDir,
+        tokf: resolveTokfToolConfig(),
         securityProfile: this.serializeSecurityProfile(effectiveProjectDir),
       },
     };
@@ -928,6 +932,12 @@ export class AgentManager extends EventEmitter {
   /**
    * Build MCP session options from the project's resolved environment.
    * This keeps worker MCP resolution aligned with the project-level UI settings.
+   *
+   * TODO: Add a parallel per-agent skill configuration layer in Settings,
+   * similar to AGENT_MCP_<agent>_ADD / REMOVE. The worker should receive the
+   * selected existing skills for agents like planner, coder, qa_reviewer, and
+   * qa_fixer so prompt assembly can inject those skill instructions only for
+   * the targeted agent.
    */
   private buildSessionMcpOptions(
     projectPath: string,

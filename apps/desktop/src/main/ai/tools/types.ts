@@ -10,6 +10,11 @@ import type { z } from 'zod/v3';
 
 import type { SecurityProfile } from '../security/bash-validator';
 
+export interface TokfToolConfig {
+  /** Absolute path to tokf (or a validated executable name on PATH) */
+  path: string;
+}
+
 // ---------------------------------------------------------------------------
 // Tool Context
 // ---------------------------------------------------------------------------
@@ -31,6 +36,8 @@ export interface ToolContext {
   abortSignal?: AbortSignal;
   /** If set, Write/Edit tools can only write within these directories */
   allowedWritePaths?: string[];
+  /** Optional tokf integration for filtering shell output before it reaches the model */
+  tokf?: TokfToolConfig;
 }
 
 // ---------------------------------------------------------------------------

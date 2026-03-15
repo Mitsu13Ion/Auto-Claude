@@ -258,6 +258,33 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
           )}
         </div>
         <div className="space-y-3">
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 p-4">
+            <div className="space-y-1">
+              <Label htmlFor="tokfEnabled" className="text-sm font-medium text-foreground">
+                {t('general.tokfEnabled')}
+              </Label>
+              <p className="text-sm text-muted-foreground">{t('general.tokfEnabledDescription')}</p>
+            </div>
+            <Switch
+              id="tokfEnabled"
+              checked={settings.tokfEnabled === true}
+              onCheckedChange={(checked) => onSettingsChange({ ...settings, tokfEnabled: checked })}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="tokfPath" className="text-sm font-medium text-foreground">{t('general.tokfPath')}</Label>
+            <p className="text-sm text-muted-foreground">{t('general.tokfPathDescription')}</p>
+            <Input
+              id="tokfPath"
+              placeholder={t('general.tokfPathPlaceholder')}
+              className="w-full max-w-lg"
+              value={settings.tokfPath || ''}
+              disabled={settings.tokfEnabled === false}
+              onChange={(e) => onSettingsChange({ ...settings, tokfPath: e.target.value })}
+            />
+          </div>
+        </div>
+        <div className="space-y-3">
           <Label htmlFor="autoBuildPath" className="text-sm font-medium text-foreground">{t('general.autoClaudePath')}</Label>
           <p className="text-sm text-muted-foreground">{t('general.autoClaudePathDescription')}</p>
           <Input

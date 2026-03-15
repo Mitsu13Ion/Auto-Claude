@@ -377,7 +377,7 @@ export function registerSettingsHandlers(
       // Fixes issue where Windows paths persisted on macOS (and vice versa)
       // when settings were synced/transferred between platforms
       // See: https://github.com/AndyMik90/Auto-Claude/issues/XXX
-      const pathFields = ['pythonPath', 'gitPath', 'githubCLIPath', 'gitlabCLIPath', 'claudePath', 'autoBuildPath'] as const;
+      const pathFields = ['pythonPath', 'gitPath', 'githubCLIPath', 'gitlabCLIPath', 'claudePath', 'tokfPath', 'autoBuildPath'] as const;
       for (const field of pathFields) {
         const pathValue = settings[field];
         if (pathValue && isPathFromWrongPlatform(pathValue)) {
