@@ -34,7 +34,7 @@ import {
 import { safeParseJson } from '../../utils/json-repair';
 import type { SessionResult } from '../session/types';
 import { iterateSubtasks } from './subtask-iterator';
-import type { SubtaskIteratorConfig, SubtaskResult } from './subtask-iterator';
+import type { SubtaskIteratorConfig } from './subtask-iterator';
 
 // =============================================================================
 // Constants
@@ -48,6 +48,9 @@ const MAX_PLANNING_VALIDATION_RETRIES = 3;
 
 /** Maximum retries for a single subtask before marking stuck */
 const MAX_SUBTASK_RETRIES = 3;
+
+/** Maximum QA retries with an identical failed report before stopping */
+const MAX_IDENTICAL_QA_FAILURES = 1;
 
 /** Delay before retrying after an error (ms) */
 const ERROR_RETRY_DELAY_MS = 5_000;
@@ -437,6 +440,7 @@ export class BuildOrchestrator extends EventEmitter {
       sourceSpecDir: this.config.sourceSpecDir,
       maxRetries: MAX_SUBTASK_RETRIES,
       autoContinueDelayMs: AUTO_CONTINUE_DELAY_MS,
+      maxIterations: this.config.maxIterations,
       abortSignal: this.config.abortSignal,
       onSubtaskStart: (subtask, attempt) => {
         this.iteration++;
@@ -477,6 +481,10 @@ export class BuildOrchestrator extends EventEmitter {
       return { success: false, error: 'Build cancelled' };
     }
 
+    if (iteratorResult.failureReason) {
+      return { success: false, error: iteratorResult.failureReason };
+    }
+
     if (iteratorResult.stuckSubtasks.length > 0) {
       return {
         success: false,
@@ -501,6 +509,8 @@ export class BuildOrchestrator extends EventEmitter {
     this.transitionPhase('qa_review', 'Running QA review');
 
     const maxQACycles = 3;
+    let lastFailedReportFingerprint: string | null = null;
+    let identicalFailureCount = 0;
     for (let cycle = 0; cycle < maxQACycles; cycle++) {
       if (this.aborted) {
         return { success: false, error: 'Build cancelled' };
@@ -546,6 +556,19 @@ export class BuildOrchestrator extends EventEmitter {
         this.markPhaseCompleted('qa_review');
         this.transitionPhase('complete', 'Build complete - QA passed');
         return { success: true };
+      }
+
+      const currentFailureFingerprint = await this.readQAReportFingerprint();
+      if (currentFailureFingerprint && currentFailureFingerprint === lastFailedReportFingerprint) {
+        identicalFailureCount += 1;
+      } else {
+        identicalFailureCount = 0;
+        lastFailedReportFingerprint = currentFailureFingerprint;
+      }
+
+      if (identicalFailureCount >= MAX_IDENTICAL_QA_FAILURES) {
+        this.transitionPhase('failed', 'QA made no observable progress after fixes');
+        return { success: false, error: 'QA produced the same failed report after a fix cycle' };
       }
 
       if ((qaStatus === 'failed' || qaStatus === 'unknown') && cycle < maxQACycles - 1) {
@@ -763,6 +786,17 @@ export class BuildOrchestrator extends EventEmitter {
       return 'unknown';
     } catch {
       return 'unknown';
+    }
+  }
+
+  private async readQAReportFingerprint(): Promise<string | null> {
+    const qaReportPath = join(this.config.specDir, 'qa_report.md');
+    try {
+      const content = await readFile(qaReportPath, 'utf-8');
+      const normalized = content.replace(/\s+/g, ' ').trim().toLowerCase();
+      return normalized.length > 0 ? normalized : null;
+    } catch {
+      return null;
     }
   }
 

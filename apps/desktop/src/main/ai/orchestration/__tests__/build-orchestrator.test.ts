@@ -40,8 +40,8 @@ describe('BuildOrchestrator', () => {
             id: 'phase-1',
             name: 'Implementation',
             subtasks: [
-              { id: 'subtask-1', title: 'First subtask', description: 'Complete first subtask', status: 'pending' },
-              { id: 'subtask-2', title: 'Second subtask', description: 'This one will get stuck', status: 'pending' },
+              { id: 'subtask-1', title: 'First subtask', description: 'Complete first subtask', status: 'pending', files_to_create: ['src/first.ts'] },
+              { id: 'subtask-2', title: 'Second subtask', description: 'This one will get stuck', status: 'pending', files_to_create: ['src/second.ts'] },
             ],
           },
         ],
@@ -60,6 +60,8 @@ describe('BuildOrchestrator', () => {
       }
 
       if (config.subtaskId === 'subtask-1') {
+        await mkdir(join(projectDir, 'src'), { recursive: true });
+        await writeFile(join(projectDir, 'src', 'first.ts'), 'export const first = true;\n');
         return createSessionResult('completed');
       }
 
@@ -134,12 +136,15 @@ describe('BuildOrchestrator', () => {
                 id: 'phase-1',
                 name: 'Implementation',
                 subtasks: [
-                  { id: 'subtask-1', description: 'Implement feature', status: 'pending' },
+                  { id: 'subtask-1', description: 'Implement feature', status: 'pending', files_to_create: ['src/feature.ts'] },
                 ],
               },
             ],
           }, null, 2),
         );
+      } else if (config.agentType === 'coder') {
+        await mkdir(join(projectDir, 'src'), { recursive: true });
+        await writeFile(join(projectDir, 'src', 'feature.ts'), 'export const feature = true;\n');
       } else if (config.agentType === 'qa_reviewer') {
         await writeFile(join(specDir, 'qa_report.md'), 'Status: PASSED\n');
       }
@@ -161,6 +166,46 @@ describe('BuildOrchestrator', () => {
     );
     expect(runSession).toHaveBeenCalledWith(
       expect.objectContaining({ agentType: 'coder' }),
+    );
+  }, 15_000);
+
+  it('stops coding when repeated completed sessions make no observable progress', async () => {
+    await writeFile(
+      join(specDir, 'implementation_plan.json'),
+      JSON.stringify({
+        feature: 'no-progress feature',
+        phases: [
+          {
+            id: 'phase-1',
+            name: 'Implementation',
+            subtasks: [
+              { id: 'subtask-1', title: 'No-op subtask', description: 'Does not change anything', status: 'pending' },
+            ],
+          },
+        ],
+      }, null, 2),
+    );
+
+    const runSession = vi.fn(async (config: SessionRunConfig) => {
+      if (config.agentType === 'coder') {
+        return createSessionResult('completed');
+      }
+      return createSessionResult('completed');
+    });
+
+    const orchestrator = new BuildOrchestrator({
+      specDir,
+      projectDir,
+      generatePrompt: vi.fn().mockResolvedValue('prompt'),
+      runSession,
+    });
+
+    const outcome = await orchestrator.run();
+
+    expect(outcome.success).toBe(false);
+    expect(outcome.error).toContain('Subtasks stuck after max retries: subtask-1');
+    expect(runSession).not.toHaveBeenCalledWith(
+      expect.objectContaining({ agentType: 'qa_reviewer' }),
     );
   }, 15_000);
 });

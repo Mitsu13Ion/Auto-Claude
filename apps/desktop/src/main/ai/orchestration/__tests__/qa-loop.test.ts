@@ -319,19 +319,26 @@ describe('QALoop', () => {
   // -------------------------------------------------------------------------
 
   it('escalates when the same issue recurs 3 or more times', async () => {
-    const recurringIssue = { title: 'Null pointer exception', type: 'critical' as const };
-    const rejectedPlan = JSON.stringify({
-      phases: [{ subtasks: [{ status: 'completed' }] }],
-      qa_signoff: { status: 'rejected', issues_found: [recurringIssue] },
-    });
-
     let planReadCount = 0;
 
     mockReadFile.mockImplementation((path: string) => {
       if (path.endsWith('implementation_plan.json')) {
         planReadCount++;
         if (planReadCount === 1) return Promise.resolve(completedPlan()); // build complete
-        return Promise.resolve(rejectedPlan);
+        return Promise.resolve(JSON.stringify({
+          phases: [{ subtasks: [{ status: 'completed' }] }],
+          qa_signoff: {
+            status: 'rejected',
+            issues_found: [
+              {
+                title: 'Null pointer exception',
+                type: 'critical',
+                description: `variant ${planReadCount}`,
+                location: `src/module-${planReadCount}.ts`,
+              },
+            ],
+          },
+        }));
       }
       return Promise.reject(new Error('ENOENT'));
     });
@@ -342,6 +349,50 @@ describe('QALoop', () => {
 
     expect(outcome.approved).toBe(false);
     expect(outcome.reason).toBe('recurring_issues');
+  });
+
+  it('stops when the same rejected issue set survives repeated fix cycles', async () => {
+    const repeatedPlan = JSON.stringify({
+      phases: [{ subtasks: [{ status: 'completed' }] }],
+      qa_signoff: {
+        status: 'rejected',
+        issues_found: [
+          {
+            title: 'Login form still broken',
+            type: 'critical',
+            location: 'src/auth/login.tsx',
+            fix_required: 'Restore form submission',
+          },
+        ],
+      },
+    });
+
+    let planReadCount = 0;
+    mockReadFile.mockImplementation((path: string) => {
+      if (path.endsWith('implementation_plan.json')) {
+        planReadCount++;
+        if (planReadCount === 1) return Promise.resolve(completedPlan());
+        return Promise.resolve(repeatedPlan);
+      }
+      return Promise.reject(new Error('ENOENT'));
+    });
+
+    const runSession = vi.fn(async ({ agentType }: QASessionRunConfig) => {
+      if (agentType === 'qa_fixer') {
+        return makeSessionResult('completed');
+      }
+      return makeSessionResult('completed');
+    });
+
+    const config = makeConfig({ runSession, maxIterations: 5 });
+    const loop = new QALoop(config);
+    const outcome = await loop.run();
+
+    expect(outcome.approved).toBe(false);
+    expect(outcome.reason).toBe('no_progress');
+    expect(runSession).toHaveBeenCalledWith(
+      expect.objectContaining({ agentType: 'qa_fixer' }),
+    );
   });
 
   // -------------------------------------------------------------------------

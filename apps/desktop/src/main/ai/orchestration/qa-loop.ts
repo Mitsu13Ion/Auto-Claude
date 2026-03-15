@@ -45,6 +45,9 @@ const MAX_CONSECUTIVE_ERRORS = 3;
 /** Number of times an issue must recur before escalation */
 const RECURRING_ISSUE_THRESHOLD = 3;
 
+/** Stop when the same rejected issue set survives multiple fix cycles */
+const MAX_NO_PROGRESS_CYCLES = 1;
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -150,7 +153,7 @@ export interface QAOutcome {
   /** Duration in ms */
   durationMs: number;
   /** Reason if not approved */
-  reason?: 'max_iterations' | 'recurring_issues' | 'consecutive_errors' | 'cancelled' | 'error';
+  reason?: 'max_iterations' | 'recurring_issues' | 'consecutive_errors' | 'cancelled' | 'error' | 'no_progress';
   /** Error message if failed */
   error?: string;
 }
@@ -222,6 +225,8 @@ export class QALoop extends EventEmitter {
       // Main QA loop
       let consecutiveErrors = 0;
       let lastErrorContext: QAErrorContext | undefined;
+      let lastRejectedIssuesFingerprint: string | null = null;
+      let noProgressCycles = 0;
 
       for (let iteration = 1; iteration <= maxIterations; iteration++) {
         if (this.aborted) {
@@ -287,6 +292,8 @@ export class QALoop extends EventEmitter {
         this.emitTyped('qa-review-complete', iteration, status, issues);
 
         if (status === 'approved') {
+          lastRejectedIssuesFingerprint = null;
+          noProgressCycles = 0;
           await this.recordIteration(iteration, 'approved', [], iterationDuration);
           await this.writeReports('approved');
           return this.outcome(true, iteration, Date.now() - startTime);
@@ -296,6 +303,26 @@ export class QALoop extends EventEmitter {
           consecutiveErrors = 0;
           lastErrorContext = undefined;
           await this.recordIteration(iteration, 'rejected', issues, iterationDuration);
+
+          const issuesFingerprint = this.fingerprintIssues(issues);
+          if (issuesFingerprint === lastRejectedIssuesFingerprint) {
+            noProgressCycles += 1;
+          } else {
+            noProgressCycles = 0;
+            lastRejectedIssuesFingerprint = issuesFingerprint;
+          }
+
+          if (noProgressCycles >= MAX_NO_PROGRESS_CYCLES) {
+            this.emitTyped('log', 'QA produced the same issue set after repeated fix cycles — escalating to human review');
+            await this.writeReports('escalated');
+            return this.outcome(
+              false,
+              iteration,
+              Date.now() - startTime,
+              'no_progress',
+              `QA produced the same issue set after ${MAX_NO_PROGRESS_CYCLES} fix cycles`,
+            );
+          }
 
           // Check for recurring issues
           if (this.hasRecurringIssues(issues)) {
@@ -600,6 +627,20 @@ export class QALoop extends EventEmitter {
     }
 
     return recurring;
+  }
+
+  private fingerprintIssues(issues: QAIssue[]): string {
+    return issues
+      .map((issue) => ({
+        type: issue.type ?? 'warning',
+        title: issue.title.trim().toLowerCase(),
+        description: issue.description?.trim().toLowerCase() ?? '',
+        location: issue.location?.trim().toLowerCase() ?? '',
+        fix_required: issue.fix_required?.trim().toLowerCase() ?? '',
+      }))
+      .sort((a, b) => `${a.title}:${a.location}`.localeCompare(`${b.title}:${b.location}`))
+      .map((issue) => JSON.stringify(issue))
+      .join('|');
   }
 
   /**

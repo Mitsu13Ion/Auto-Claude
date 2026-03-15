@@ -7,8 +7,11 @@
  * the coder agent session, and tracks completion/retry/stuck state.
  */
 
+import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 import { safeParseJson } from '../../utils/json-repair';
 import type { ExtractedInsights, InsightExtractionConfig } from '../runners/insight-extractor';
@@ -21,6 +24,8 @@ import {
   waitForAuthResume,
   waitForRateLimitResume,
 } from './pause-handler';
+
+const execFileAsync = promisify(execFile);
 
 // =============================================================================
 // Types
@@ -36,6 +41,10 @@ export interface SubtaskIteratorConfig {
   maxRetries: number;
   /** Delay between subtask iterations (ms) */
   autoContinueDelayMs: number;
+  /** Hard cap on total coding sessions for this task */
+  maxIterations?: number;
+  /** Stop when a subtask makes no observable progress across repeated attempts */
+  maxNoProgressAttempts?: number;
   /** Abort signal for cancellation */
   abortSignal?: AbortSignal;
   /**
@@ -70,6 +79,8 @@ export interface SubtaskIteratorResult {
   stuckSubtasks: string[];
   /** Whether iteration was cancelled */
   cancelled: boolean;
+  /** Whether the iterator hit a global safety stop */
+  failureReason?: string;
 }
 
 /** Single subtask result for internal tracking */
@@ -107,6 +118,16 @@ interface PlanSubtask {
   files_to_modify?: string[];
 }
 
+interface ProgressSnapshot {
+  planFingerprint: string;
+  subtaskFingerprint: string;
+  workspaceFingerprint: string | null;
+  targetFilesFingerprint: string;
+}
+
+const DEFAULT_MAX_CODING_ITERATIONS = 24;
+const DEFAULT_MAX_NO_PROGRESS_ATTEMPTS = 2;
+
 // =============================================================================
 // Core Functions
 // =============================================================================
@@ -125,11 +146,16 @@ export async function iterateSubtasks(
   config: SubtaskIteratorConfig,
 ): Promise<SubtaskIteratorResult> {
   const attemptCounts = new Map<string, number>();
+  const noProgressCounts = new Map<string, number>();
   const stuckSubtasks: string[] = [];
   let completedSubtasks = 0;
   let totalSubtasks = 0;
+  let totalIterations = 0;
+  const maxIterations = config.maxIterations ?? DEFAULT_MAX_CODING_ITERATIONS;
+  const maxNoProgressAttempts = config.maxNoProgressAttempts ?? DEFAULT_MAX_NO_PROGRESS_ATTEMPTS;
+  let exhaustedIterationBudget = true;
 
-  while (true) {
+  while (totalIterations < maxIterations) {
     // Check cancellation
     if (config.abortSignal?.aborted) {
       return { totalSubtasks, completedSubtasks, stuckSubtasks, cancelled: true };
@@ -149,6 +175,7 @@ export async function iterateSubtasks(
     const next = getNextPendingSubtask(plan, stuckSubtasks);
     if (!next) {
       // All subtasks completed or stuck
+      exhaustedIterationBudget = false;
       break;
     }
 
@@ -178,9 +205,14 @@ export async function iterateSubtasks(
 
     // Notify start
     config.onSubtaskStart?.(subtaskInfo, currentAttempt);
+    totalIterations += 1;
+
+    const beforeSnapshot = await captureProgressSnapshot(config.specDir, config.projectDir, subtask);
 
     // Run the session
     const result = await config.runSubtaskSession(subtaskInfo, currentAttempt);
+    const afterSnapshot = await captureProgressSnapshot(config.specDir, config.projectDir, subtask);
+    const madeProgress = hasObservableProgress(beforeSnapshot, afterSnapshot);
 
     // Notify complete
     config.onSubtaskComplete?.(subtaskInfo, result);
@@ -229,10 +261,28 @@ export async function iterateSubtasks(
       continue;
     }
 
+    if (!madeProgress) {
+      const noProgressAttempts = (noProgressCounts.get(subtask.id) ?? 0) + 1;
+      noProgressCounts.set(subtask.id, noProgressAttempts);
+
+      if (noProgressAttempts >= maxNoProgressAttempts) {
+        if (!stuckSubtasks.includes(subtask.id)) {
+          stuckSubtasks.push(subtask.id);
+        }
+        config.onSubtaskStuck?.(
+          subtaskInfo,
+          `No observable progress after ${maxNoProgressAttempts} attempts`,
+        );
+        continue;
+      }
+    } else {
+      noProgressCounts.delete(subtask.id);
+    }
+
     // Post-session: only a genuinely completed session may mark the subtask done.
     // subtask is marked as completed. The coder agent is instructed to update
     // implementation_plan.json itself, but it doesn't always do so reliably.
-    if (result.outcome === 'completed') {
+    if (result.outcome === 'completed' && madeProgress) {
       await ensureSubtaskMarkedCompleted(config.specDir, subtask.id);
 
       // Re-stamp executionPhase on the worktree plan after the coder session.
@@ -264,7 +314,15 @@ export async function iterateSubtasks(
     }
   }
 
-  return { totalSubtasks, completedSubtasks, stuckSubtasks, cancelled: false };
+  return {
+    totalSubtasks,
+    completedSubtasks,
+    stuckSubtasks,
+    cancelled: false,
+    failureReason: exhaustedIterationBudget
+      ? `Coding iteration budget exhausted after ${maxIterations} sessions`
+      : undefined,
+  };
 }
 
 // =============================================================================
@@ -407,6 +465,125 @@ async function loadImplementationPlan(
   } catch {
     return null;
   }
+}
+
+async function captureProgressSnapshot(
+  specDir: string,
+  projectDir: string,
+  subtask: PlanSubtask,
+): Promise<ProgressSnapshot> {
+  const plan = await loadImplementationPlan(specDir);
+
+  return {
+    planFingerprint: buildPlanFingerprint(plan),
+    subtaskFingerprint: buildSubtaskFingerprint(plan, subtask.id),
+    workspaceFingerprint: await getWorkspaceFingerprint(projectDir),
+    targetFilesFingerprint: await getTargetFilesFingerprint(
+      projectDir,
+      subtask.files_to_create ?? [],
+      subtask.files_to_modify ?? [],
+    ),
+  };
+}
+
+function buildPlanFingerprint(plan: ImplementationPlan | null): string {
+  if (!plan) {
+    return '';
+  }
+
+  return JSON.stringify(
+    plan.phases.map((phase) => ({
+      name: phase.name,
+      subtasks: phase.subtasks.map((subtask) => ({
+        id: subtask.id,
+        status: subtask.status,
+        description: subtask.description,
+        files_to_create: subtask.files_to_create ?? [],
+        files_to_modify: subtask.files_to_modify ?? [],
+      })),
+    })),
+  );
+}
+
+function buildSubtaskFingerprint(plan: ImplementationPlan | null, subtaskId: string): string {
+  if (!plan) {
+    return '';
+  }
+
+  for (const phase of plan.phases) {
+    for (const subtask of phase.subtasks) {
+      if (subtask.id === subtaskId) {
+        return JSON.stringify({
+          id: subtask.id,
+          status: subtask.status,
+          description: subtask.description,
+          files_to_create: subtask.files_to_create ?? [],
+          files_to_modify: subtask.files_to_modify ?? [],
+        });
+      }
+    }
+  }
+
+  return '';
+}
+
+async function getWorkspaceFingerprint(projectDir: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['-C', projectDir, 'status', '--short'],
+      { maxBuffer: 1024 * 1024 },
+    );
+    return stdout.trim();
+  } catch {
+    return null;
+  }
+}
+
+async function getTargetFilesFingerprint(
+  projectDir: string,
+  filesToCreate: string[],
+  filesToModify: string[],
+): Promise<string> {
+  const fileSet = new Set([...filesToCreate, ...filesToModify].filter(Boolean));
+  if (fileSet.size === 0) {
+    return '';
+  }
+
+  const parts = await Promise.all(
+    Array.from(fileSet).sort().map(async (relativePath) => {
+      const fullPath = join(projectDir, relativePath);
+      try {
+        const content = await readFile(fullPath, 'utf-8');
+        const hash = createHash('sha1').update(content).digest('hex');
+        return `${relativePath}:${hash}`;
+      } catch {
+        return `${relativePath}:missing`;
+      }
+    }),
+  );
+
+  return parts.join('|');
+}
+
+function hasObservableProgress(before: ProgressSnapshot, after: ProgressSnapshot): boolean {
+  if (before.planFingerprint !== after.planFingerprint) {
+    return true;
+  }
+
+  if (before.subtaskFingerprint !== after.subtaskFingerprint) {
+    return true;
+  }
+
+  if (before.targetFilesFingerprint !== after.targetFilesFingerprint) {
+    return true;
+  }
+
+  return (
+    before.workspaceFingerprint !== null &&
+    after.workspaceFingerprint !== null &&
+    before.workspaceFingerprint !== after.workspaceFingerprint
+  );
 }
 
 /**
