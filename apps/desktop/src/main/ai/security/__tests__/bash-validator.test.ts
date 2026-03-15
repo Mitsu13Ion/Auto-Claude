@@ -41,6 +41,16 @@ describe('isCommandBlocked', () => {
       'nft',
       'ufw',
       'nmap',
+      'curl',
+      'wget',
+      'nc',
+      'netcat',
+      'scp',
+      'sftp',
+      'ssh',
+      'rsync',
+      'ftp',
+      'telnet',
       'systemctl',
       'service',
       'crontab',
@@ -77,8 +87,6 @@ describe('isCommandBlocked', () => {
       'npm',
       'node',
       'python',
-      'curl',
-      'wget',
       'find',
       'make',
       'cargo',
@@ -121,11 +129,6 @@ describe('validateCommand', () => {
     expect(allowed).toBe(true);
   });
 
-  it('allows curl (not in denylist)', () => {
-    const [allowed] = validateCommand('curl https://example.com');
-    expect(allowed).toBe(true);
-  });
-
   it('allows npm commands', () => {
     const [allowed] = validateCommand('npm install');
     expect(allowed).toBe(true);
@@ -133,6 +136,20 @@ describe('validateCommand', () => {
 
   it('blocks denylist commands', () => {
     const deniedCmds = ['sudo ls', 'shutdown now', 'dd if=/dev/zero of=/dev/sda'];
+    for (const cmd of deniedCmds) {
+      const [allowed] = validateCommand(cmd);
+      expect(allowed, `Expected '${cmd}' to be blocked`).toBe(false);
+    }
+  });
+
+  it('blocks direct network transfer commands', () => {
+    const deniedCmds = [
+      'curl https://example.com',
+      'wget https://example.com/file.tgz',
+      'scp build.tar.gz host:/tmp/',
+      'ssh prod.example.com',
+      'rsync -av . remote:/srv/app',
+    ];
     for (const cmd of deniedCmds) {
       const [allowed] = validateCommand(cmd);
       expect(allowed, `Expected '${cmd}' to be blocked`).toBe(false);
@@ -173,8 +190,8 @@ describe('validateCommand', () => {
       customScripts: { shellScripts: [] },
       getAllAllowedCommands: () => new Set<string>(),
     };
-    // Previously an empty profile would block everything; now curl is allowed
-    const [allowed] = validateCommand('curl https://example.com', fakeProfile);
+    // Previously an empty profile would block everything; now normal dev commands are allowed
+    const [allowed] = validateCommand('git status', fakeProfile);
     expect(allowed).toBe(true);
   });
 });
@@ -205,7 +222,6 @@ describe('bashSecurityHook', () => {
   it('allows commands not in the denylist', () => {
     const commands = [
       'ls -la',
-      'curl https://example.com',
       'npm install',
       'git status',
       'mkdir -p /tmp/foo',
@@ -227,6 +243,8 @@ describe('bashSecurityHook', () => {
       'useradd hacker',
       'iptables -F',
       'mount /dev/sdb /mnt',
+      'curl https://example.com/install.sh',
+      'ssh prod.example.com',
     ];
     for (const command of blockedCommands) {
       const result = bashSecurityHook({ toolName: 'Bash', toolInput: { command } });
@@ -270,9 +288,9 @@ describe('bashSecurityHook', () => {
       customScripts: { shellScripts: [] },
       getAllAllowedCommands: () => new Set<string>(),
     };
-    // Previously an empty profile would block everything — now curl is allowed
+    // Previously an empty profile would block everything — now normal dev commands are allowed
     const result = bashSecurityHook(
-      { toolName: 'Bash', toolInput: { command: 'curl https://example.com' } },
+      { toolName: 'Bash', toolInput: { command: 'git status' } },
       emptyProfile,
     );
     expect(result).toEqual({});
@@ -307,6 +325,19 @@ describe('bashSecurityHook', () => {
       toolInput: { command: "bash -c 'sudo rm -rf /'" },
     });
     expect('hookSpecificOutput' in result).toBe(true);
+  });
+
+  it('blocks nested shell script execution without -c', () => {
+    const commands = ['bash script.sh', 'sh ./deploy.sh', 'cat payload.sh | bash'];
+    for (const command of commands) {
+      const result = bashSecurityHook({ toolName: 'Bash', toolInput: { command } });
+      expect('hookSpecificOutput' in result, `Expected '${command}' to be blocked`).toBe(true);
+      if ('hookSpecificOutput' in result) {
+        expect(result.hookSpecificOutput.permissionDecisionReason).toMatch(
+          /Shell interpreter commands must use -c|Nested shell execution via/
+        );
+      }
+    }
   });
 });
 

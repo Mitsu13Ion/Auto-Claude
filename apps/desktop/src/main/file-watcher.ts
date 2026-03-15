@@ -23,6 +23,27 @@ export class FileWatcher extends EventEmitter {
   // Tracks taskIds that had unwatch() called while watch() was in-flight.
   // Checked after each await point in watch() to avoid creating a leaked watcher.
   private cancelledWatches: Set<string> = new Set();
+  private recentErrors: Map<string, number> = new Map();
+
+  private reportReadError(taskId: string, planPath: string, error: unknown, context: string): void {
+    const code = (error as NodeJS.ErrnoException)?.code;
+    if (code === 'ENOENT' || code === 'EBUSY' || code === 'EAGAIN') {
+      return;
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    const key = `${taskId}:${context}:${message}`;
+    const now = Date.now();
+    const lastSeen = this.recentErrors.get(key) ?? 0;
+    if (now - lastSeen < 5_000) {
+      return;
+    }
+    this.recentErrors.set(key, now);
+
+    const detailedMessage = `[FileWatcher] ${context} for ${planPath}: ${message}`;
+    console.warn(detailedMessage);
+    this.emit('error', taskId, detailedMessage);
+  }
 
   /**
    * Start watching a task's implementation plan
@@ -103,8 +124,8 @@ export class FileWatcher extends EventEmitter {
             this.emit('progress', taskId, this.normalizePlanStatuses(plan));
           }
           // If null, JSON is corrupt even after repair — skip this event
-        } catch {
-          // File might be in the middle of being written
+        } catch (error) {
+          this.reportReadError(taskId, planPath, error, 'Failed to read updated implementation plan');
         }
       });
 
@@ -121,8 +142,8 @@ export class FileWatcher extends EventEmitter {
         if (plan) {
           this.emit('progress', taskId, this.normalizePlanStatuses(plan));
         }
-      } catch {
-        // Initial read failed - not critical
+      } catch (error) {
+        this.reportReadError(taskId, planPath, error, 'Failed to read initial implementation plan');
       }
     } finally {
       // Only clean up if this call still owns the entry. If a superseding

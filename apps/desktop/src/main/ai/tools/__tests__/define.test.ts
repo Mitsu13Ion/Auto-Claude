@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { sanitizeFilePathArg } from '../define';
+import { isPathWithinAllowedWritePaths, sanitizeFilePathArg } from '../define';
 
 // =============================================================================
 // sanitizeFilePathArg
@@ -53,5 +53,34 @@ describe('sanitizeFilePathArg', () => {
     const input: Record<string, unknown> = { file_path: 'src/components/App.tsx' };
     sanitizeFilePathArg(input);
     expect(input.file_path).toBe('src/components/App.tsx');
+  });
+});
+
+describe('isPathWithinAllowedWritePaths', () => {
+  it('allows writes inside an allowed directory', () => {
+    expect(
+      isPathWithinAllowedWritePaths(
+        '/project/.auto-claude/specs/001/spec.md',
+        ['/project/.auto-claude/specs'],
+      ),
+    ).toBe(true);
+  });
+
+  it('blocks sibling-prefix escapes', () => {
+    expect(
+      isPathWithinAllowedWritePaths(
+        '/project/.auto-claude/specs-evil/spec.md',
+        ['/project/.auto-claude/specs'],
+      ),
+    ).toBe(false);
+  });
+
+  it('blocks parent traversal outside the allowed directory', () => {
+    expect(
+      isPathWithinAllowedWritePaths(
+        '/project/.auto-claude/specs/../secrets.txt',
+        ['/project/.auto-claude/specs'],
+      ),
+    ).toBe(false);
   });
 });

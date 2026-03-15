@@ -22,7 +22,7 @@ import { tool } from 'ai';
 import type { Tool as AITool } from 'ai';
 import { z } from 'zod/v3';
 
-import { resolve } from 'node:path';
+import path, { resolve } from 'node:path';
 
 import { bashSecurityHook } from '../security/bash-validator';
 import type {
@@ -111,6 +111,31 @@ export function sanitizeFilePathArg(input: Record<string, unknown>): void {
   }
 }
 
+/**
+ * Check whether a write target stays within one of the allowed directories.
+ *
+ * Uses path-relative containment instead of prefix matching so sibling paths
+ * like `/spec` and `/spec-evil` cannot bypass the boundary.
+ *
+ * @internal Exported for unit testing only.
+ */
+export function isPathWithinAllowedWritePaths(
+  writePath: string,
+  allowedWritePaths: readonly string[],
+): boolean {
+  const resolvedPath = resolve(writePath);
+
+  return allowedWritePaths.some((allowedDir) => {
+    const resolvedAllowedDir = resolve(allowedDir);
+    const relativePath = path.relative(resolvedAllowedDir, resolvedPath);
+
+    return (
+      relativePath === '' ||
+      (!relativePath.startsWith('..') && !path.isAbsolute(relativePath))
+    );
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Tool.define()
 // ---------------------------------------------------------------------------
@@ -153,9 +178,7 @@ function define<TInput extends z.ZodType, TOutput>(
         if (context.allowedWritePaths?.length && metadata.permission !== ToolPermission.ReadOnly) {
           const writePath = (input as Record<string, unknown>).file_path as string | undefined;
           if (writePath) {
-            const resolved = resolve(writePath);
-            const allowed = context.allowedWritePaths.some(dir => resolved.startsWith(resolve(dir)));
-            if (!allowed) {
+            if (!isPathWithinAllowedWritePaths(writePath, context.allowedWritePaths)) {
               throw new Error(
                 `Write denied: ${metadata.name} cannot write to ${writePath}. ` +
                 `Allowed directories: ${context.allowedWritePaths.join(', ')}`,

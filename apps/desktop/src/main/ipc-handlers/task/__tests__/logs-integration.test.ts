@@ -549,6 +549,25 @@ describe('Task Logs Integration (IPC → Service → State)', () => {
       );
     });
 
+    it('should forward watch-error events as TASK_ERROR', async () => {
+      const { taskLogService } = await import('../../../task-log-service');
+
+      const onCall = (taskLogService.on as Mock).mock.calls.find(
+        call => call[0] === 'watch-error'
+      );
+      expect(onCall).toBeDefined();
+      if (!onCall) throw new Error('watch-error handler not registered');
+      const eventHandler = onCall[1];
+
+      eventHandler('001-test-task', 'Failed to read task log file');
+
+      expect(mockMainWindow.webContents?.send).toHaveBeenCalledWith(
+        'task:error',
+        '001-test-task',
+        'Failed to read task log file'
+      );
+    });
+
     it('should not crash when main window is null', async () => {
       // Clear all mocks and re-setup with null window
       vi.clearAllMocks();

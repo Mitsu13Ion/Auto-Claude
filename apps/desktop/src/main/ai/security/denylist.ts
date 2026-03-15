@@ -50,6 +50,18 @@ export const BLOCKED_COMMANDS: Set<string> = new Set([
   // Network scanning / exploitation primitives
   'nmap',
 
+  // Direct network / exfiltration primitives
+  'curl',
+  'wget',
+  'nc',
+  'netcat',
+  'scp',
+  'sftp',
+  'ssh',
+  'rsync',
+  'ftp',
+  'telnet',
+
   // System service management
   'systemctl',
   'service',

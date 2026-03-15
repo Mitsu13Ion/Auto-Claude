@@ -131,26 +131,46 @@ function extractCArgument(commandString: string): string | null | typeof PARSE_F
  * (e.g. `bash -c "sudo rm -rf /"`).
  */
 export function validateShellCCommand(commandString: string): ValidationResult {
+  const tokens = shellSplit(commandString);
+  if (tokens === null) {
+    return [false, 'Could not parse shell command'];
+  }
+
   const innerCommand = extractCArgument(commandString);
 
   if (innerCommand === PARSE_FAILURE) {
-    // shellSplit failed — deny to avoid permissive fallback on malformed input
     return [false, 'Could not parse shell command'];
   }
 
   if (innerCommand === null) {
-    // Not a -c invocation — block dangerous shell constructs
-    const dangerousPatterns = ['<(', '>('];
+    // Not a -c invocation — deny nested shell execution via script file,
+    // piped stdin, or interactive shells. The Bash tool already executes
+    // commands through a shell, so nesting shell interpreters is unnecessary
+    // and creates validation bypasses.
+    const dangerousPatterns = ['<(', '>(', '|'];
     for (const pattern of dangerousPatterns) {
       if (commandString.includes(pattern)) {
         return [
           false,
-          `Process substitution '${pattern}' not allowed in shell commands`,
+          `Nested shell execution via '${pattern}' is not allowed`,
         ];
       }
     }
-    // Allow simple shell invocations (e.g., "bash script.sh")
-    return [true, ''];
+
+    for (let i = 1; i < tokens.length; i++) {
+      const token = tokens[i];
+      if (token === '--' || !token.startsWith('-')) {
+        return [
+          false,
+          'Shell interpreter commands must use -c; script/file execution is not allowed',
+        ];
+      }
+    }
+
+    return [
+      false,
+      'Shell interpreter commands must use -c; interactive/script execution is not allowed',
+    ];
   }
 
   // Extract command names from the -c string

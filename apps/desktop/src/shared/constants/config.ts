@@ -127,11 +127,35 @@ export const AUTO_BUILD_PATHS = {
 /** Disable GitHub integration UI (issues, PRs) — RiverCode uses GitLab exclusively */
 export const GITHUB_SUPPORT_DISABLED = true;
 
+function sanitizeProjectDataDir(autoBuildPath: string | undefined): string {
+  const candidate = autoBuildPath?.trim();
+  if (!candidate) {
+    return '.auto-claude';
+  }
+
+  const normalized = candidate.replace(/\\/g, '/');
+  if (normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized)) {
+    console.warn('[config] Ignoring absolute autoBuildPath outside project settings:', autoBuildPath);
+    return '.auto-claude';
+  }
+
+  const segments = normalized
+    .split('/')
+    .filter((segment) => segment && segment !== '.');
+
+  if (segments.length === 0 || segments.some((segment) => segment === '..')) {
+    console.warn('[config] Ignoring unsafe autoBuildPath traversal:', autoBuildPath);
+    return '.auto-claude';
+  }
+
+  return segments.join('/');
+}
+
 /**
  * Get the specs directory path.
  * All specs go to .auto-claude/specs/ (the project's data directory).
  */
 export function getSpecsDir(autoBuildPath: string | undefined): string {
-  const basePath = autoBuildPath || '.auto-claude';
+  const basePath = sanitizeProjectDataDir(autoBuildPath);
   return `${basePath}/specs`;
 }

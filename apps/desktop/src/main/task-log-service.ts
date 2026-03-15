@@ -31,9 +31,30 @@ export class TaskLogService extends EventEmitter {
   private pollIntervals: Map<string, NodeJS.Timeout> = new Map();
   // Store paths being watched for each specId (main + worktree)
   private watchedPaths: Map<string, { mainSpecDir: string; worktreeSpecDir: string | null; specsRelPath: string }> = new Map();
+  private recentWatchErrors: Map<string, number> = new Map();
 
   // Poll interval for watching log changes (more reliable than fs.watch on some systems)
   private readonly POLL_INTERVAL_MS = 1000;
+
+  private reportWatchError(specId: string, context: string, error: unknown): void {
+    const code = (error as NodeJS.ErrnoException)?.code;
+    if (code === 'ENOENT' || code === 'EBUSY' || code === 'EAGAIN') {
+      return;
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    const key = `${specId}:${context}:${message}`;
+    const now = Date.now();
+    const lastSeen = this.recentWatchErrors.get(key) ?? 0;
+    if (now - lastSeen < 5_000) {
+      return;
+    }
+    this.recentWatchErrors.set(key, now);
+
+    const detailedMessage = `[TaskLogService] ${context} for ${specId}: ${message}`;
+    debugWarn(detailedMessage);
+    this.emit('watch-error', specId, detailedMessage);
+  }
 
   /**
    * Load task logs from a single spec directory
@@ -360,8 +381,8 @@ export class TaskLogService extends EventEmitter {
             lastMainContent = currentContent;
             mainChanged = true;
           }
-        } catch (_error) {
-          // Ignore read/parse errors
+        } catch (error) {
+          this.reportWatchError(specId, 'Failed to read task log file in project spec dir', error);
         }
       }
 
@@ -375,8 +396,8 @@ export class TaskLogService extends EventEmitter {
               lastWorktreeContent = currentContent;
               worktreeChanged = true;
             }
-          } catch (_error) {
-            // Ignore read/parse errors
+          } catch (error) {
+            this.reportWatchError(specId, 'Failed to read task log file in worktree spec dir', error);
           }
         }
       }

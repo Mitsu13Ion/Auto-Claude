@@ -151,4 +151,11 @@ export function registerTaskLogsHandlers(getMainWindow: () => BrowserWindow | nu
       mainWindow.webContents.send(IPC_CHANNELS.TASK_LOGS_STREAM, specId, chunk);
     }
   });
+
+  taskLogService.on('watch-error', (specId: string, error: string) => {
+    const mainWindow = getMainWindow();
+    if (mainWindow) {
+      mainWindow.webContents.send(IPC_CHANNELS.TASK_ERROR, specId, error);
+    }
+  });
 }

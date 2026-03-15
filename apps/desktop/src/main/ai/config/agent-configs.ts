@@ -230,10 +230,10 @@ export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
   /**
    * Spec Orchestrator — entry point for the full spec creation pipeline.
    * Drives spec_gatherer → spec_researcher → spec_writer → spec_critic pipeline.
-   * Needs full tool access to read/write spec files and research documentation.
+   * Needs spec-scoped file access and research documentation lookup.
    */
   spec_orchestrator: {
-    tools: [...ALL_BUILTIN_TOOLS, 'SpawnSubagent'],
+    tools: [...SPEC_TOOLS, 'SpawnSubagent'],
     mcpServers: ['context7'],
     autoClaudeTools: [],
     thinkingDefault: 'high',
