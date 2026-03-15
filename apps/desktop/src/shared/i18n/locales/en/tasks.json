@@ -13,6 +13,8 @@
   "actions": {
     "start": "Start",
     "stop": "Stop",
+    "retry": "Retry",
+    "retryTask": "Retry Task",
     "recover": "Recover",
     "resume": "Resume",
     "archive": "Archive",

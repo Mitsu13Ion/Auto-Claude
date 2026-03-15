@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { calculateProgress } from '../../lib/utils';
-import { stopTask, submitReview, recoverStuckTask, deleteTask, useTaskStore, startTaskOrQueue } from '../../stores/task-store';
+import { stopTask, submitReview, recoverStuckTask, deleteTask, useTaskStore, startTaskOrQueue, isRetryableErrorTask } from '../../stores/task-store';
 import { useProjectStore } from '../../stores/project-store';
 import { TASK_STATUS_LABELS } from '../../../shared/constants';
 import { TaskEditDialog } from '../TaskEditDialog';
@@ -86,6 +86,7 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
   const progressPercent = calculateProgress(task.subtasks);
   const completedSubtasks = task.subtasks.filter(s => s.status === 'completed').length;
   const totalSubtasks = task.subtasks.length;
+  const isRetryableError = isRetryableErrorTask(task);
 
   // Event Handlers
   const handleStartStop = async () => {
@@ -279,6 +280,15 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
               Resume Task
             </>
           )}
+        </Button>
+      );
+    }
+
+    if (isRetryableError) {
+      return (
+        <Button variant="default" onClick={handleStartStop}>
+          <RotateCcw className="mr-2 h-4 w-4" />
+          {t('tasks:actions.retryTask')}
         </Button>
       );
     }

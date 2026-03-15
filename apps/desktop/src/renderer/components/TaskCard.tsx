@@ -31,7 +31,7 @@ import {
   JSON_ERROR_PREFIX,
   JSON_ERROR_TITLE_SUFFIX
 } from '../../shared/constants';
-import { stopTask, checkTaskRunning, recoverStuckTask, isIncompleteHumanReview, archiveTasks, hasRecentActivity, startTaskOrQueue } from '../stores/task-store';
+import { stopTask, checkTaskRunning, recoverStuckTask, isIncompleteHumanReview, isRetryableErrorTask, archiveTasks, hasRecentActivity, startTaskOrQueue } from '../stores/task-store';
 import { useToast } from '../hooks/use-toast';
 import type { Task, TaskCategory, ReviewReason, TaskStatus } from '../../shared/types';
 
@@ -145,6 +145,7 @@ export const TaskCard = memo(function TaskCard({
 
   // Check if task is in human_review but has no completed subtasks (crashed/incomplete)
   const isIncomplete = isIncompleteHumanReview(task);
+  const isRetryableError = isRetryableErrorTask(task);
 
   // Memoize expensive computations to avoid running on every render
   // Truncate description for card display - full description shown in modal
@@ -557,6 +558,16 @@ export const TaskCard = memo(function TaskCard({
               >
                 <Play className="mr-1.5 h-3 w-3" />
                 {t('actions.resume')}
+              </Button>
+            ) : isRetryableError ? (
+              <Button
+                variant="default"
+                size="sm"
+                className="h-7 px-2.5"
+                onClick={handleStartStop}
+              >
+                <RotateCcw className="mr-1.5 h-3 w-3" />
+                {t('actions.retry')}
               </Button>
             ) : task.status === 'done' && task.metadata?.prUrl ? (
               <div className="flex gap-1">

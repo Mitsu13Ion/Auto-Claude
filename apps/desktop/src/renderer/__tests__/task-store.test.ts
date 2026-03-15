@@ -3,7 +3,7 @@
  * Tests Zustand store for task state management
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { useTaskStore, hasRecentActivity, clearTaskActivity } from '../stores/task-store';
+import { useTaskStore, hasRecentActivity, clearTaskActivity, isRetryableErrorTask } from '../stores/task-store';
 import type { Task, TaskStatus, ImplementationPlan } from '../../shared/types';
 
 // Helper to create test tasks
@@ -589,6 +589,28 @@ describe('Task Store', () => {
         expect(tasks).toHaveLength(1);
         expect(tasks[0].status).toBe(status);
       });
+    });
+  });
+
+  describe('isRetryableErrorTask', () => {
+    it('should return true for explicit error status', () => {
+      expect(isRetryableErrorTask(createTestTask({ status: 'error' }))).toBe(true);
+    });
+
+    it('should return true for human_review tasks with errors reviewReason', () => {
+      expect(
+        isRetryableErrorTask(createTestTask({ status: 'human_review', reviewReason: 'errors' }))
+      ).toBe(true);
+    });
+
+    it('should return false for other human_review reasons', () => {
+      expect(
+        isRetryableErrorTask(createTestTask({ status: 'human_review', reviewReason: 'completed' }))
+      ).toBe(false);
+    });
+
+    it('should return false for non-error statuses', () => {
+      expect(isRetryableErrorTask(createTestTask({ status: 'backlog' }))).toBe(false);
     });
   });
 

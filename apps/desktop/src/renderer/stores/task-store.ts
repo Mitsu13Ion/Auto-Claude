@@ -1221,6 +1221,14 @@ export function isIncompleteHumanReview(task: Task): boolean {
 }
 
 /**
+ * Check if a task is in an error state that can be retried directly from the UI.
+ * This covers explicit error status and human review states caused by execution failures.
+ */
+export function isRetryableErrorTask(task: Task): boolean {
+  return task.status === 'error' || (task.status === 'human_review' && task.reviewReason === 'errors');
+}
+
+/**
  * Get the count of completed subtasks for a task
  */
 export function getCompletedSubtaskCount(task: Task): number {

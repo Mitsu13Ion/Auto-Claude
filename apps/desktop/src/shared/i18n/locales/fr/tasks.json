@@ -13,6 +13,8 @@
   "actions": {
     "start": "Démarrer",
     "stop": "Arrêter",
+    "retry": "Relancer",
+    "retryTask": "Relancer la tâche",
     "recover": "Récupérer",
     "resume": "Reprendre",
     "archive": "Archiver",
