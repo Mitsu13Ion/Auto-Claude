@@ -114,6 +114,44 @@ function getPhaseConfig(
   return null;
 }
 
+function normalizeErrorLog(log: string): string {
+  return log.replace(/^\[ERROR\]\s*/, '').trim();
+}
+
+export function getPhaseErrorMessages(phaseLogs: TaskLogs | null): string[] {
+  if (!phaseLogs) {
+    return [];
+  }
+
+  return (['planning', 'coding', 'validation'] as TaskLogPhase[])
+    .flatMap((phase) => phaseLogs.phases[phase]?.entries ?? [])
+    .filter((entry) => entry.type === 'error')
+    .map((entry) => entry.content.trim())
+    .filter(Boolean);
+}
+
+export function getLegacyErrorMessages(task: Task): string[] {
+  return (task.logs ?? [])
+    .filter((log) => log.startsWith('[ERROR]'))
+    .map(normalizeErrorLog)
+    .filter(Boolean);
+}
+
+export function getUnmatchedLegacyErrorMessages(task: Task, phaseLogs: TaskLogs | null): string[] {
+  const phaseErrors = new Set(getPhaseErrorMessages(phaseLogs));
+  return getLegacyErrorMessages(task).filter((message) => !phaseErrors.has(message));
+}
+
+export function getLatestTaskErrorMessage(task: Task, phaseLogs: TaskLogs | null): string | null {
+  const phaseErrors = getPhaseErrorMessages(phaseLogs);
+  if (phaseErrors.length > 0) {
+    return phaseErrors[phaseErrors.length - 1] ?? null;
+  }
+
+  const legacyErrors = getLegacyErrorMessages(task);
+  return legacyErrors[legacyErrors.length - 1] ?? null;
+}
+
 export function TaskLogs({
   task,
   phaseLogs,
@@ -125,6 +163,9 @@ export function TaskLogs({
   onLogsScroll,
   onTogglePhase
 }: TaskLogsProps) {
+  const latestErrorMessage = getLatestTaskErrorMessage(task, phaseLogs);
+  const unmatchedLegacyErrors = getUnmatchedLegacyErrorMessages(task, phaseLogs);
+
   return (
     <div
       ref={logsContainerRef}
@@ -132,12 +173,41 @@ export function TaskLogs({
       onScroll={onLogsScroll}
     >
       <div className="p-4 space-y-2">
+        {latestErrorMessage && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-destructive">Latest task error</p>
+                <p className="text-xs text-destructive/90 whitespace-pre-wrap break-words">
+                  {latestErrorMessage}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
         {isLoadingLogs ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : phaseLogs ? (
           <>
+            {unmatchedLegacyErrors.length > 0 && (
+              <div className="space-y-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2">
+                <div className="flex items-center gap-2 text-xs font-medium text-destructive">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Runtime errors
+                </div>
+                {unmatchedLegacyErrors.map((message, index) => (
+                  <div
+                    key={`${message}-${index}`}
+                    className="rounded-md bg-destructive/10 px-2 py-1 text-xs text-destructive whitespace-pre-wrap break-words"
+                  >
+                    {message}
+                  </div>
+                ))}
+              </div>
+            )}
             {/* Phase-based collapsible logs */}
             {(['planning', 'coding', 'validation'] as TaskLogPhase[]).map((phase) => (
               <PhaseLogSection

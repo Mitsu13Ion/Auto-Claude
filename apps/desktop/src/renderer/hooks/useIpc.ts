@@ -5,6 +5,7 @@ import { useRoadmapStore } from '../stores/roadmap-store';
 import { useRateLimitStore } from '../stores/rate-limit-store';
 import { useAuthFailureStore } from '../stores/auth-failure-store';
 import { useProjectStore } from '../stores/project-store';
+import { toast } from './use-toast';
 import type { ImplementationPlan, TaskStatus, RoadmapGenerationStatus, Roadmap, ExecutionProgress, RateLimitInfo, SDKRateLimitInfo, AuthFailureInfo } from '../../shared/types';
 
 /** Maximum log entries to buffer in the batch queue between flushes (OOM prevention) */
@@ -93,6 +94,14 @@ function flushBatch(): void {
 
   batchQueue.clear();
   batchTimeout = null;
+}
+
+function truncateErrorForToast(error: string, maxLength = 240): string {
+  const normalized = error.trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, maxLength - 1)}…`;
 }
 
 function queueUpdate(taskId: string, update: BatchedUpdate): void {
@@ -195,6 +204,11 @@ export function useIpcListeners(): void {
         // Errors are not batched - show immediately
         setError(`Task ${taskId}: ${error}`);
         appendLog(taskId, `[ERROR] ${error}`);
+        toast({
+          title: `Task ${taskId} failed`,
+          description: truncateErrorForToast(error),
+          variant: 'destructive',
+        });
       }
     );
 
