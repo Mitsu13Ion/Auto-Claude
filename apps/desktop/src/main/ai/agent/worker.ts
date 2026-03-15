@@ -106,6 +106,48 @@ function postTaskEvent(eventType: string, extra?: Record<string, unknown>): void
   } satisfies WorkerTaskEventMessage);
 }
 
+function formatErrorDetail(error: unknown): string | undefined {
+  if (error instanceof Error) {
+    return error.stack || `${error.name}: ${error.message}`;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  if (error === undefined || error === null) {
+    return undefined;
+  }
+
+  try {
+    return JSON.stringify(error, null, 2);
+  } catch {
+    return String(error);
+  }
+}
+
+function getDefaultLogPhase(session: SerializableSessionConfig): Phase {
+  if (session.phase) {
+    return session.phase;
+  }
+
+  switch (session.agentType) {
+    case 'spec_orchestrator':
+    case 'planner':
+      return 'planning';
+    case 'qa_reviewer':
+    case 'qa_fixer':
+      return 'qa';
+    default:
+      return 'coding';
+  }
+}
+
+function logSessionFailure(message: string, phase?: Phase, detail?: string): void {
+  if (!logWriter) {
+    return;
+  }
+  logWriter.logError(message, phase, detail);
+}
+
 // =============================================================================
 // Abort Handling
 // =============================================================================
@@ -352,10 +394,19 @@ async function runSingleSession(
       oauthTokenFilePath: baseSession.oauthTokenFilePath,
     });
   } catch (error) {
+    logSessionFailure(
+      error instanceof Error ? error.message : String(error),
+      phase,
+      formatErrorDetail(error),
+    );
     // Ensure log cleanup happens on failure
     if (logWriter && !skipPhaseLogging) logWriter.endPhase(phase, false);
     if (logWriter) logWriter.setSubtask(undefined);
     throw error;
+  }
+
+  if (sessionResult.error) {
+    logSessionFailure(sessionResult.error.message, phase, formatErrorDetail(sessionResult.error.cause));
   }
 
   // End phase logging — mark as completed or failed based on outcome (skip when orchestrator manages phases)
@@ -435,6 +486,7 @@ async function run(): Promise<void> {
     await runDefaultSession(session, toolContext, registry);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
+    logSessionFailure(message, getDefaultLogPhase(session), formatErrorDetail(error));
     postError(`Agent session failed: ${message}`);
   } finally {
     // Cleanup MCP clients
@@ -530,6 +582,13 @@ async function runDefaultSession(
       oauthTokenFilePath: session.oauthTokenFilePath,
     });
   } finally {
+    if (result?.error) {
+      logSessionFailure(
+        result.error.message,
+        defaultPhase,
+        formatErrorDetail(result.error.cause),
+      );
+    }
     if (logWriter) {
       const success = result?.outcome === 'completed';
       logWriter.endPhase(defaultPhase, success ?? false);
@@ -679,6 +738,11 @@ async function runBuildOrchestrator(
 
   const outcome = await orchestrator.run();
 
+  if (!outcome.success && outcome.error) {
+    const failedPhase = mapExecutionPhaseToPhase(outcome.finalPhase) ?? 'coding';
+    logSessionFailure(outcome.error, failedPhase);
+  }
+
   // End the final phase and flush any remaining accumulated log entries.
   // When the orchestrator reaches 'complete' or 'failed', finalPhase is a terminal
   // state that doesn't map to a log phase. In that case, close whichever log phase
@@ -792,6 +856,10 @@ async function runQALoop(
   }
 
   const outcome = await qaLoop.run();
+
+  if (!outcome.approved && outcome.error) {
+    logSessionFailure(outcome.error, 'qa');
+  }
 
   // End QA validation phase and flush any remaining accumulated log entries
   if (logWriter) {
@@ -945,6 +1013,10 @@ async function runSpecOrchestrator(
   });
 
   const outcome = await orchestrator.run();
+
+  if (!outcome.success && outcome.error) {
+    logSessionFailure(outcome.error, 'planning');
+  }
 
   // Emit task event on failure so XState gets a specific signal
   // instead of relying on the generic PROCESS_EXITED fallback.
@@ -1128,6 +1200,13 @@ async function runAgenticSpecOrchestrator(
       oauthTokenFilePath: session.oauthTokenFilePath,
     });
   } finally {
+    if (result?.error) {
+      logSessionFailure(
+        result.error.message,
+        'planning',
+        formatErrorDetail(result.error.cause),
+      );
+    }
     if (logWriter) {
       const success = result?.outcome === 'completed';
       logWriter.endPhase('spec', success ?? false);

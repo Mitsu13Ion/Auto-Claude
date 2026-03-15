@@ -167,6 +167,15 @@ export class TaskLogWriter {
   }
 
   /**
+   * Write an error entry, optionally with expandable detail.
+   */
+  logError(content: string, phase?: Phase, detail?: string): void {
+    const logPhase = phase ? toLogPhase(phase) : this.currentPhase;
+    this.addEntry(logPhase, 'error', content, detail ? { detail, collapsed: true } : undefined);
+    this.save();
+  }
+
+  /**
    * Flush any accumulated text and save.
    */
   flush(): void {
