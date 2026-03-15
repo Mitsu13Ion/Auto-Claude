@@ -57,6 +57,7 @@ const PHASE_MODEL_OPTIONS = [
   { value: 'haiku', label: 'Haiku' },
   { value: 'sonnet', label: 'Sonnet' },
   { value: 'opus', label: 'Opus' },
+  { value: 'opus-1m', label: 'Opus 1M' },
 ];
 
 interface ProviderSettingsProps {
