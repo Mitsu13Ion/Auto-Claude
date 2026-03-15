@@ -79,6 +79,24 @@ export class TaskRunGuard {
     return this.getBudgetExceededMessage();
   }
 
+  recordAuxiliaryUsage(
+    phase: Phase,
+    label: string,
+    usage: TokenUsage | null | undefined,
+  ): string | null {
+    if (!usage || usage.totalTokens <= 0) {
+      return null;
+    }
+
+    addUsage(this.usage, usage);
+    this.logWriter?.logText(
+      `Auxiliary AI (${label}) | ${usage.totalTokens.toLocaleString()} tokens`,
+      phase,
+      'metrics',
+    );
+    return this.getBudgetExceededMessage();
+  }
+
   getSummary(): TaskRunSummary {
     return {
       sessions: this.sessions,

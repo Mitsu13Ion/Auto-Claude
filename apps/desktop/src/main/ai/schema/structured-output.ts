@@ -23,6 +23,7 @@ import type { LanguageModel } from 'ai';
 import { readFile } from 'node:fs/promises';
 import { safeParseJson } from '../../utils/json-repair';
 import { writeFileWithRetry } from '../../utils/atomic-file';
+import type { TokenUsage } from '../session/types';
 
 // =============================================================================
 // LLM Text → Typed Data Helper
@@ -74,6 +75,8 @@ export interface StructuredOutputValidation<T> {
   errors: string[];
   /** The raw data before validation (for debugging) */
   raw?: unknown;
+  /** Token usage when an auxiliary LLM repair/generation call was used */
+  usage?: TokenUsage;
 }
 
 // =============================================================================
@@ -291,6 +294,11 @@ export async function repairJsonWithLLM<T>(
 ): Promise<StructuredOutputValidation<T>> {
   // Lazy import to avoid circular dependencies — ai package is heavy
   const { generateText, Output } = await import('ai');
+  const cumulativeUsage: TokenUsage = {
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+  };
 
   let rawContent: string;
   try {
@@ -321,6 +329,7 @@ export async function repairJsonWithLLM<T>(
         prompt: repairPrompt,
         output: Output.object({ schema: outputSchema }),
       });
+      addUsage(cumulativeUsage, normalizeGenerateTextUsage(result));
 
       if (result.output) {
         // Output.object() validated the response — now validate with the
@@ -330,7 +339,7 @@ export async function repairJsonWithLLM<T>(
           // Persist beside the target file so worktree writes stay on the same filesystem.
           // Use retry logic because plan files are actively watched and can hit transient FS errors.
           await writeFileWithRetry(filePath, JSON.stringify(coerced.data, null, 2));
-          return { valid: true, data: coerced.data, errors: [] };
+          return { valid: true, data: coerced.data, errors: [], usage: withUsageOrUndefined(cumulativeUsage) };
         }
         // Output.object() passed but coercion schema didn't — update errors for next attempt
         errors = formatZodErrors(coerced.error as ZodError);
@@ -343,7 +352,7 @@ export async function repairJsonWithLLM<T>(
   }
 
   // Repair failed — return the latest errors so the caller can decide next steps
-  return { valid: false, errors };
+  return { valid: false, errors, usage: withUsageOrUndefined(cumulativeUsage) };
 }
 
 /** Schema hint for the implementation plan (used in retry prompts) */
@@ -373,3 +382,57 @@ export const IMPLEMENTATION_PLAN_SCHEMA_HINT = `\`\`\`
 
 IMPORTANT: Each subtask MUST be an object with at least "id", "title", and "status" fields.
 Do NOT write subtasks as plain strings — they must be objects.`;
+
+function normalizeGenerateTextUsage(result: unknown): TokenUsage {
+  if (!result || typeof result !== 'object') {
+    return { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  }
+
+  const usage = (result as { usage?: unknown }).usage;
+  if (!usage || typeof usage !== 'object') {
+    return { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  }
+
+  const promptTokens = toNumber((usage as { inputTokens?: unknown; promptTokens?: unknown }).inputTokens)
+    ?? toNumber((usage as { promptTokens?: unknown }).promptTokens)
+    ?? 0;
+  const completionTokens = toNumber((usage as { outputTokens?: unknown; completionTokens?: unknown }).outputTokens)
+    ?? toNumber((usage as { completionTokens?: unknown }).completionTokens)
+    ?? 0;
+  const totalTokens = toNumber((usage as { totalTokens?: unknown }).totalTokens)
+    ?? (promptTokens + completionTokens);
+
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    thinkingTokens: toNumber((usage as { reasoningTokens?: unknown; thinkingTokens?: unknown }).reasoningTokens)
+      ?? toNumber((usage as { thinkingTokens?: unknown }).thinkingTokens),
+    cacheReadTokens: toNumber((usage as { cachedInputTokens?: unknown; cacheReadTokens?: unknown }).cachedInputTokens)
+      ?? toNumber((usage as { cacheReadTokens?: unknown }).cacheReadTokens),
+    cacheCreationTokens: toNumber((usage as { cacheCreationTokens?: unknown }).cacheCreationTokens),
+  };
+}
+
+function addUsage(target: TokenUsage, source: TokenUsage): void {
+  target.promptTokens += source.promptTokens;
+  target.completionTokens += source.completionTokens;
+  target.totalTokens += source.totalTokens;
+  if (source.thinkingTokens !== undefined) {
+    target.thinkingTokens = (target.thinkingTokens ?? 0) + source.thinkingTokens;
+  }
+  if (source.cacheReadTokens !== undefined) {
+    target.cacheReadTokens = (target.cacheReadTokens ?? 0) + source.cacheReadTokens;
+  }
+  if (source.cacheCreationTokens !== undefined) {
+    target.cacheCreationTokens = (target.cacheCreationTokens ?? 0) + source.cacheCreationTokens;
+  }
+}
+
+function withUsageOrUndefined(usage: TokenUsage): TokenUsage | undefined {
+  return usage.totalTokens > 0 ? usage : undefined;
+}
+
+function toNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}

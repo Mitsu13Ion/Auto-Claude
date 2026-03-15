@@ -62,6 +62,16 @@ export interface ContinuationConfig {
   baseURL?: string;
   /** OAuth token file path (for token refresh) */
   oauthTokenFilePath?: string;
+  /**
+   * Optional guard called before starting a fresh continuation session.
+   * Return a message to stop and surface the reason as a task-budget error.
+   */
+  beforeContinuation?: (checkpoint: {
+    cumulativeUsage: TokenUsage;
+    continuationCount: number;
+    currentSessionCount: number;
+    projectedSessionCount: number;
+  }) => string | null | Promise<string | null>;
 }
 
 /**
@@ -161,12 +171,39 @@ export async function runContinuableSession(
       };
     }
 
+    const nextContinuationCount = continuationCount + 1;
+    const stopMessage = await continuationConfig.beforeContinuation?.({
+      cumulativeUsage: { ...cumulativeUsage },
+      continuationCount: nextContinuationCount,
+      currentSessionCount: i + 1,
+      projectedSessionCount: i + 2,
+    });
+
+    if (stopMessage) {
+      return {
+        ...result,
+        outcome: 'error',
+        stepsExecuted: totalStepsExecuted,
+        toolCallCount: totalToolCallCount,
+        durationMs: totalDurationMs,
+        usage: cumulativeUsage,
+        continuationCount,
+        cumulativeUsage,
+        error: {
+          code: 'task_budget_exceeded',
+          message: stopMessage,
+          retryable: false,
+        },
+      };
+    }
+
     // Compact and continue
-    continuationCount++;
+    continuationCount = nextContinuationCount;
     const summary = await compactSessionMessages(
       result.messages,
       continuationConfig,
       config.abortSignal,
+      cumulativeUsage,
     );
 
     const continuationMessage: SessionMessage = {
@@ -208,6 +245,7 @@ async function compactSessionMessages(
   messages: SessionMessage[],
   continuationConfig: ContinuationConfig,
   abortSignal?: AbortSignal,
+  cumulativeUsage?: TokenUsage,
 ): Promise<string> {
   // Serialize messages to text
   let serialized = serializeMessages(messages);
@@ -245,6 +283,11 @@ async function compactSessionMessages(
       prompt,
       abortSignal,
     });
+
+    const usage = normalizeGenerateTextUsage(result);
+    if (usage && cumulativeUsage) {
+      addUsage(cumulativeUsage, usage);
+    }
 
     if (result.text.trim()) {
       return result.text.trim();
@@ -312,4 +355,43 @@ function addUsage(cumulative: TokenUsage, addition: TokenUsage): void {
   if (addition.cacheCreationTokens) {
     cumulative.cacheCreationTokens = (cumulative.cacheCreationTokens ?? 0) + addition.cacheCreationTokens;
   }
+}
+
+function normalizeGenerateTextUsage(result: unknown): TokenUsage | null {
+  if (!result || typeof result !== 'object') {
+    return null;
+  }
+
+  const usage = (result as { usage?: unknown }).usage;
+  if (!usage || typeof usage !== 'object') {
+    return null;
+  }
+
+  const promptTokens = toNumber((usage as { inputTokens?: unknown; promptTokens?: unknown }).inputTokens)
+    ?? toNumber((usage as { promptTokens?: unknown }).promptTokens)
+    ?? 0;
+  const completionTokens = toNumber((usage as { outputTokens?: unknown; completionTokens?: unknown }).outputTokens)
+    ?? toNumber((usage as { completionTokens?: unknown }).completionTokens)
+    ?? 0;
+  const totalTokens = toNumber((usage as { totalTokens?: unknown }).totalTokens)
+    ?? (promptTokens + completionTokens);
+
+  if (promptTokens <= 0 && completionTokens <= 0 && totalTokens <= 0) {
+    return null;
+  }
+
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    thinkingTokens: toNumber((usage as { reasoningTokens?: unknown; thinkingTokens?: unknown }).reasoningTokens)
+      ?? toNumber((usage as { thinkingTokens?: unknown }).thinkingTokens),
+    cacheReadTokens: toNumber((usage as { cachedInputTokens?: unknown; cacheReadTokens?: unknown }).cachedInputTokens)
+      ?? toNumber((usage as { cacheReadTokens?: unknown }).cacheReadTokens),
+    cacheCreationTokens: toNumber((usage as { cacheCreationTokens?: unknown }).cacheCreationTokens),
+  };
+}
+
+function toNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }

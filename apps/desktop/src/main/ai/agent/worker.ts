@@ -34,7 +34,7 @@ import type {
   WorkerTaskEventMessage,
 } from './types';
 import type { Tool as AITool } from 'ai';
-import type { SessionConfig, StreamEvent, SessionResult } from '../session/types';
+import type { SessionConfig, StreamEvent, SessionResult, TokenUsage } from '../session/types';
 import { BuildOrchestrator } from '../orchestration/build-orchestrator';
 import { QALoop } from '../orchestration/qa-loop';
 import { SpecOrchestrator } from '../orchestration/spec-orchestrator';
@@ -73,6 +73,9 @@ const logWriter = config.session.specDir
   ? new TaskLogWriter(config.session.specDir, basename(config.session.specDir))
   : null;
 const taskRunGuard = new TaskRunGuard(logWriter);
+const MAX_PROJECT_INDEX_PROMPT_CHARS = 6_000;
+const MAX_PRIOR_PHASE_FILE_CHARS = 4_000;
+const MAX_TOTAL_PRIOR_PHASE_CONTEXT_CHARS = 10_000;
 
 // =============================================================================
 // Messaging Helpers
@@ -187,6 +190,46 @@ function applyTaskBudget(
       retryable: false,
     },
   };
+}
+
+function recordAuxiliaryUsage(
+  phase: Phase,
+  label: string,
+  usage: TokenUsage | undefined,
+): string | null {
+  const budgetExceededMessage = taskRunGuard.recordAuxiliaryUsage(phase, label, usage);
+  if (!budgetExceededMessage) {
+    return null;
+  }
+
+  logSessionFailure(budgetExceededMessage, phase);
+  return budgetExceededMessage;
+}
+
+function checkContinuationBudget(checkpoint: {
+  cumulativeUsage: TokenUsage;
+  continuationCount: number;
+  projectedSessionCount: number;
+}): string | null {
+  const summary = taskRunGuard.getSummary();
+  const projectedTokens = summary.usage.totalTokens + checkpoint.cumulativeUsage.totalTokens;
+  if (projectedTokens >= summary.budget.maxTotalTokens) {
+    return [
+      'Task execution budget exceeded',
+      `${projectedTokens.toLocaleString()} tokens projected`,
+      `(limit ${summary.budget.maxTotalTokens.toLocaleString()} tokens)`,
+    ].join(' ');
+  }
+
+  if (summary.sessions + checkpoint.projectedSessionCount > summary.budget.maxSessions) {
+    return `Task execution budget exceeded: projected ${summary.sessions + checkpoint.projectedSessionCount} sessions (limit ${summary.budget.maxSessions})`;
+  }
+
+  if (summary.continuationCount + checkpoint.continuationCount > summary.budget.maxContinuations) {
+    return `Task execution budget exceeded: projected ${summary.continuationCount + checkpoint.continuationCount} context-window continuations (limit ${summary.budget.maxContinuations})`;
+  }
+
+  return null;
 }
 
 function buildAggregatedResult(
@@ -468,6 +511,7 @@ async function runSingleSession(
       apiKey: baseSession.apiKey,
       baseURL: baseSession.baseURL,
       oauthTokenFilePath: baseSession.oauthTokenFilePath,
+      beforeContinuation: checkContinuationBudget,
     });
   } catch (error) {
     logSessionFailure(
@@ -763,6 +807,7 @@ async function runBuildOrchestrator(
         runConfig.outputSchema,
       );
     },
+    recordAuxiliaryUsage: (phase, label, usage) => recordAuxiliaryUsage(phase, label, usage),
   });
 
   orchestrator.on('phase-change', (phase: ExecutionPhase, message: string) => {
@@ -1241,7 +1286,7 @@ async function runAgenticSpecOrchestrator(
   ];
 
   if (projectIndexContent) {
-    kickoffParts.push(`\n\n## PROJECT INDEX\n\n\`\`\`json\n${projectIndexContent}\n\`\`\``);
+    kickoffParts.push(`\n\n## PROJECT INDEX\n\n\`\`\`json\n${compactPromptBlock(projectIndexContent, MAX_PROJECT_INDEX_PROMPT_CHARS)}\n\`\`\``);
   }
 
   const kickoffMessage = kickoffParts.join('');
@@ -1426,14 +1471,21 @@ function buildSpecKickoffMessage(
   const contextSections: string[] = [baseMessage];
 
   if (projectIndex) {
-    contextSections.push(`\n\n## PROJECT INDEX (pre-generated)\n\nThe following project structure analysis has been pre-generated for you. Use this as your starting point instead of scanning the entire project:\n\n\`\`\`json\n${projectIndex}\n\`\`\``);
+    contextSections.push(`\n\n## PROJECT INDEX (pre-generated)\n\nThe following project structure analysis has been pre-generated for you. Use this as your starting point instead of scanning the entire project:\n\n\`\`\`json\n${compactPromptBlock(projectIndex, MAX_PROJECT_INDEX_PROMPT_CHARS)}\n\`\`\``);
   }
 
   if (priorPhaseOutputs && Object.keys(priorPhaseOutputs).length > 0) {
     contextSections.push('\n\n## CONTEXT FROM PRIOR PHASES\n\nThe following outputs from earlier spec phases are provided to avoid re-reading files:');
+    let remainingChars = MAX_TOTAL_PRIOR_PHASE_CONTEXT_CHARS;
     for (const [fileName, content] of Object.entries(priorPhaseOutputs)) {
+      if (remainingChars <= 0) {
+        contextSections.push('\nAdditional prior-phase context omitted to keep prompts bounded. Read only the specific file you need if more detail is required.');
+        break;
+      }
       const ext = fileName.endsWith('.json') ? 'json' : 'markdown';
-      contextSections.push(`\n### ${fileName}\n\n\`\`\`${ext}\n${content}\n\`\`\``);
+      const compacted = compactPromptBlock(content, Math.min(MAX_PRIOR_PHASE_FILE_CHARS, remainingChars));
+      remainingChars -= compacted.length;
+      contextSections.push(`\n### ${fileName}\n\n\`\`\`${ext}\n${compacted}\n\`\`\``);
     }
     contextSections.push('\nUse these outputs as your primary source of context. Only read additional project files if you need specific code patterns not covered above.');
   }
@@ -1458,6 +1510,22 @@ function buildKickoffMessage(agentType: AgentType, specDir: string, projectDir: 
     default:
       return `Complete the task described in your system prompt. Spec directory: ${specDir}. Project directory: ${projectDir}`;
   }
+}
+
+function compactPromptBlock(content: string, maxChars: number): string {
+  if (content.length <= maxChars) {
+    return content;
+  }
+
+  const headChars = Math.max(Math.floor(maxChars * 0.7), maxChars - 800);
+  const tailChars = Math.max(200, maxChars - headChars);
+  return [
+    content.slice(0, headChars).trimEnd(),
+    '',
+    `[... truncated ${content.length - (headChars + tailChars)} characters to keep prompt size bounded ...]`,
+    '',
+    content.slice(-tailChars).trimStart(),
+  ].join('\n');
 }
 
 /**

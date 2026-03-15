@@ -80,7 +80,10 @@ describe('runContinuableSession', () => {
         }),
       );
 
-    mockGenerateText.mockResolvedValue({ text: 'summary of prior work' });
+    mockGenerateText.mockResolvedValue({
+      text: 'summary of prior work',
+      usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
+    });
 
     const result = await runContinuableSession(
       createConfig(),
@@ -91,6 +94,33 @@ describe('runContinuableSession', () => {
     expect(result.outcome).toBe('completed');
     expect(result.continuationCount).toBe(1);
     expect(result.stepsExecuted).toBe(2);
+    expect(result.usage.totalTokens).toBe(35);
     expect(mockGenerateText).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops before starting a continuation when the budget guard rejects it', async () => {
+    mockRunAgentSession.mockResolvedValue(
+      createResult({
+        outcome: 'context_window',
+        messages: [
+          { role: 'user', content: 'task' },
+          { role: 'assistant', content: 'partial progress' },
+        ],
+      }),
+    );
+
+    const result = await runContinuableSession(
+      createConfig(),
+      {},
+      {
+        contextWindowLimit: 200_000,
+        maxContinuations: 2,
+        beforeContinuation: () => 'Task execution budget exceeded',
+      },
+    );
+
+    expect(result.outcome).toBe('error');
+    expect(result.error?.code).toBe('task_budget_exceeded');
+    expect(mockGenerateText).not.toHaveBeenCalled();
   });
 });

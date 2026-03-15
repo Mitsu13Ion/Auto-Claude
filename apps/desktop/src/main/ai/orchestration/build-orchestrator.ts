@@ -32,7 +32,7 @@ import {
   IMPLEMENTATION_PLAN_SCHEMA_HINT,
 } from '../schema';
 import { safeParseJson } from '../../utils/json-repair';
-import type { SessionResult } from '../session/types';
+import type { SessionResult, TokenUsage } from '../session/types';
 import { iterateSubtasks } from './subtask-iterator';
 import type { SubtaskIteratorConfig } from './subtask-iterator';
 import { readHumanPauseData, waitForHumanResume } from './pause-handler';
@@ -103,6 +103,8 @@ export interface BuildOrchestratorConfig {
   syncSpecToSource?: (specDir: string, sourceSpecDir: string) => Promise<boolean>;
   /** Optional callback to get a resolved LanguageModel for lightweight repair calls */
   getModel?: (agentType: AgentType) => Promise<import('ai').LanguageModel | undefined>;
+  /** Optional callback to record auxiliary AI usage outside primary sessions */
+  recordAuxiliaryUsage?: (phase: Phase, label: string, usage: TokenUsage | undefined) => string | null | void;
 }
 
 /** Context passed to prompt generation */
@@ -410,6 +412,10 @@ export class BuildOrchestrator extends EventEmitter {
             validation.errors,
             IMPLEMENTATION_PLAN_SCHEMA_HINT,
           );
+          const auxiliaryBudgetError = this.config.recordAuxiliaryUsage?.('planning', 'json_repair', repairResult.usage);
+          if (auxiliaryBudgetError) {
+            return { success: false, error: auxiliaryBudgetError };
+          }
           if (repairResult.valid) {
             this.emitTyped('log', 'Lightweight repair succeeded');
             if (this.config.sourceSpecDir && this.config.syncSpecToSource) {

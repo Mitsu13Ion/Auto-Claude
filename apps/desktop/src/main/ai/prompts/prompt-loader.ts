@@ -35,6 +35,8 @@ const EXPECTED_PROMPT_FILES = [
   'validation_fixer.md',
 ] as const;
 
+const MAX_PROJECT_INSTRUCTIONS_CHARS = 8_000;
+
 // =============================================================================
 // Path Resolution
 // =============================================================================
@@ -177,9 +179,25 @@ export async function loadProjectInstructions(projectDir: string): Promise<Proje
   const candidates = ['AGENTS.md', 'agents.md', 'CLAUDE.md', 'claude.md'];
   for (const name of candidates) {
     const content = await tryReadFile(join(projectDir, name));
-    if (content) return { content, source: name };
+    if (content) return { content: compactProjectInstructions(content), source: name };
   }
   return null;
+}
+
+export function compactProjectInstructions(content: string): string {
+  if (content.length <= MAX_PROJECT_INSTRUCTIONS_CHARS) {
+    return content;
+  }
+
+  const headChars = 6_000;
+  const tailChars = 1_500;
+  return [
+    content.slice(0, headChars).trimEnd(),
+    '',
+    `[... project instructions truncated to keep prompts bounded; ${content.length - (headChars + tailChars)} characters omitted ...]`,
+    '',
+    content.slice(-tailChars).trimStart(),
+  ].join('\n');
 }
 
 /** @deprecated Use loadProjectInstructions() instead */

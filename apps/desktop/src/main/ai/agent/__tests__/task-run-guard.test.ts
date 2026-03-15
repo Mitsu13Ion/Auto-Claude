@@ -45,4 +45,23 @@ describe('TaskRunGuard', () => {
       }),
     });
   });
+
+  it('counts auxiliary AI usage against the same task budget', () => {
+    const guard = new TaskRunGuard(null, {
+      maxTotalTokens: 1_000,
+      maxSessions: 10,
+      maxContinuations: 5,
+    });
+
+    expect(guard.recordSession('planner', 'planning', 1, createSessionResult(600))).toBeNull();
+    expect(
+      guard.recordAuxiliaryUsage('planning', 'json_repair', {
+        promptTokens: 250,
+        completionTokens: 200,
+        totalTokens: 450,
+      }),
+    ).toContain('Task execution budget exceeded');
+
+    expect(guard.getSummary().usage.totalTokens).toBe(1050);
+  });
 });
