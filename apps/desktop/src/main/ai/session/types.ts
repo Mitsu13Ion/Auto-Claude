@@ -123,6 +123,10 @@ export interface SessionResult {
   durationMs: number;
   /** Tool calls made during the session */
   toolCallCount: number;
+  /** Number of context-window continuations performed, if any */
+  continuationCount?: number;
+  /** Cumulative usage across continuations, when continuation mode was used */
+  cumulativeUsage?: TokenUsage;
   /**
    * Validated structured output when outputSchema was provided in config.
    * Null if no schema was provided or if structured output extraction failed.

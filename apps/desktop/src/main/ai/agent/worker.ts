@@ -48,6 +48,7 @@ import { loadProjectInstructions, injectContext } from '../prompts/prompt-loader
 import { createMcpClientsForAgent, mergeMcpTools, closeAllMcpClients } from '../mcp/client';
 import type { McpClientResult } from '../mcp/types';
 import { runProjectIndexer } from '../project/project-indexer';
+import { TaskRunGuard } from './task-run-guard';
 
 // =============================================================================
 // Validation
@@ -71,6 +72,7 @@ if (!config?.taskId || !config?.session) {
 const logWriter = config.session.specDir
   ? new TaskLogWriter(config.session.specDir, basename(config.session.specDir))
   : null;
+const taskRunGuard = new TaskRunGuard(logWriter);
 
 // =============================================================================
 // Messaging Helpers
@@ -146,6 +148,67 @@ function logSessionFailure(message: string, phase?: Phase, detail?: string): voi
     return;
   }
   logWriter.logError(message, phase, detail);
+}
+
+function buildBudgetExceededResult(message: string): SessionResult {
+  return {
+    outcome: 'error',
+    stepsExecuted: 0,
+    usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+    messages: [],
+    durationMs: 0,
+    toolCallCount: 0,
+    error: {
+      code: 'task_budget_exceeded',
+      message,
+      retryable: false,
+    },
+  };
+}
+
+function applyTaskBudget(
+  agentType: AgentType,
+  phase: Phase,
+  sessionNumber: number,
+  result: SessionResult,
+): SessionResult {
+  const budgetExceededMessage = taskRunGuard.recordSession(agentType, phase, sessionNumber, result);
+  if (!budgetExceededMessage) {
+    return result;
+  }
+
+  logSessionFailure(budgetExceededMessage, phase);
+  return {
+    ...result,
+    outcome: 'error',
+    error: {
+      code: 'task_budget_exceeded',
+      message: budgetExceededMessage,
+      retryable: false,
+    },
+  };
+}
+
+function buildAggregatedResult(
+  success: boolean,
+  durationMs: number,
+  fallbackSteps: number,
+  errorMessage?: string,
+): SessionResult {
+  const summary = taskRunGuard.getSummary();
+  return {
+    outcome: success ? 'completed' : 'error',
+    stepsExecuted: summary.stepsExecuted > 0 ? summary.stepsExecuted : fallbackSteps,
+    usage: summary.usage,
+    messages: [],
+    toolCallCount: summary.toolCallCount,
+    durationMs,
+    continuationCount: summary.continuationCount,
+    cumulativeUsage: summary.usage,
+    error: errorMessage
+      ? { code: 'error', message: errorMessage, retryable: false }
+      : undefined,
+  };
 }
 
 // =============================================================================
@@ -305,6 +368,12 @@ async function runSingleSession(
   skipPhaseLogging = false,
   outputSchema?: import('zod').ZodSchema,
 ): Promise<SessionResult> {
+  const budgetStopMessage = taskRunGuard.canStartSession();
+  if (budgetStopMessage) {
+    logSessionFailure(budgetStopMessage, phase);
+    return buildBudgetExceededResult(budgetStopMessage);
+  }
+
   // Use queue-resolved model ID from baseSession (already mapped to the correct
   // provider-specific model, e.g., 'gpt-5.3-codex' for OpenAI Codex).
   // getPhaseModel() only knows local shorthands (opus → claude-opus-4-6) and
@@ -416,16 +485,18 @@ async function runSingleSession(
     logSessionFailure(sessionResult.error.message, phase, formatErrorDetail(sessionResult.error.cause));
   }
 
+  const guardedResult = applyTaskBudget(agentType, phase, sessionNumber, sessionResult);
+
   // End phase logging — mark as completed or failed based on outcome (skip when orchestrator manages phases)
   if (logWriter && !skipPhaseLogging) {
-    const success = sessionResult.outcome === 'completed';
+    const success = guardedResult.outcome === 'completed';
     logWriter.endPhase(phase, success);
   }
   if (logWriter) {
     logWriter.setSubtask(undefined);
   }
 
-  return sessionResult;
+  return guardedResult;
 }
 
 // =============================================================================
@@ -553,9 +624,24 @@ async function runDefaultSession(
     logWriter.startPhase(defaultPhase);
   }
 
+  const budgetStopMessage = taskRunGuard.canStartSession();
+  if (budgetStopMessage) {
+    logSessionFailure(budgetStopMessage, defaultPhase);
+    if (logWriter) {
+      logWriter.endPhase(defaultPhase, false);
+    }
+    postMessage({
+      type: 'result',
+      taskId: config.taskId,
+      data: buildBudgetExceededResult(budgetStopMessage),
+      projectId: config.projectId,
+    });
+    return;
+  }
+
   let result: SessionResult | undefined;
   try {
-    result = await runContinuableSession(sessionConfig, {
+    const sessionResult = await runContinuableSession(sessionConfig, {
       tools,
       onEvent: (event: StreamEvent) => {
         // Write stream events to task_logs.json for UI log display
@@ -588,6 +674,13 @@ async function runDefaultSession(
       baseURL: session.baseURL,
       oauthTokenFilePath: session.oauthTokenFilePath,
     });
+
+    result = applyTaskBudget(
+      session.agentType,
+      defaultPhase,
+      session.sessionNumber ?? 1,
+      sessionResult,
+    );
   } finally {
     if (result?.error) {
       logSessionFailure(
@@ -605,7 +698,7 @@ async function runDefaultSession(
   postMessage({
     type: 'result',
     taskId: config.taskId,
-    data: result as SessionResult,
+    data: result,
     projectId: config.projectId,
   });
 }
@@ -793,17 +886,12 @@ async function runBuildOrchestrator(
   }
 
   // Map outcome to a SessionResult-compatible result for the bridge
-  const result: SessionResult = {
-    outcome: outcome.success ? 'completed' : 'error',
-    stepsExecuted: outcome.totalIterations,
-    usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-    messages: [],
-    toolCallCount: 0,
-    durationMs: outcome.durationMs,
-    error: outcome.error
-      ? { code: 'error', message: outcome.error, retryable: false }
-      : undefined,
-  };
+  const result = buildAggregatedResult(
+    outcome.success,
+    outcome.durationMs,
+    outcome.totalIterations,
+    outcome.error,
+  );
 
   postMessage({
     type: 'result',
@@ -883,17 +971,12 @@ async function runQALoop(
     postTaskEvent('QA_AGENT_ERROR', { error: outcome.error });
   }
 
-  const result: SessionResult = {
-    outcome: outcome.approved ? 'completed' : 'error',
-    stepsExecuted: outcome.totalIterations,
-    usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-    messages: [],
-    toolCallCount: 0,
-    durationMs: outcome.durationMs,
-    error: outcome.error
-      ? { code: 'error', message: outcome.error, retryable: false }
-      : undefined,
-  };
+  const result = buildAggregatedResult(
+    outcome.approved,
+    outcome.durationMs,
+    outcome.totalIterations,
+    outcome.error,
+  );
 
   postMessage({
     type: 'result',
@@ -1042,17 +1125,12 @@ async function runSpecOrchestrator(
   }
 
   // Map outcome to SessionResult for the worker bridge
-  const result: SessionResult = {
-    outcome: outcome.success ? 'completed' : 'error',
-    stepsExecuted: outcome.phasesExecuted.length,
-    usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-    messages: [],
-    toolCallCount: 0,
-    durationMs: outcome.durationMs,
-    error: outcome.error
-      ? { code: 'error', message: outcome.error, retryable: false }
-      : undefined,
-  };
+  const result = buildAggregatedResult(
+    outcome.success,
+    outcome.durationMs,
+    outcome.phasesExecuted.length,
+    outcome.error,
+  );
 
   postMessage({
     type: 'result',
@@ -1172,9 +1250,25 @@ async function runAgenticSpecOrchestrator(
     logWriter.startPhase('spec', 'Agentic spec orchestration');
   }
 
+  const budgetStopMessage = taskRunGuard.canStartSession();
+  if (budgetStopMessage) {
+    logSessionFailure(budgetStopMessage, 'planning');
+    if (logWriter) {
+      logWriter.endPhase('spec', false);
+      logWriter.flush();
+    }
+    postMessage({
+      type: 'result',
+      taskId: config.taskId,
+      data: buildBudgetExceededResult(budgetStopMessage),
+      projectId: config.projectId,
+    });
+    return;
+  }
+
   let result: SessionResult | undefined;
   try {
-    result = await runContinuableSession(sessionConfig, {
+    const sessionResult = await runContinuableSession(sessionConfig, {
       tools,
       onEvent: (event: StreamEvent) => {
         if (logWriter) {
@@ -1206,6 +1300,8 @@ async function runAgenticSpecOrchestrator(
       baseURL: session.baseURL,
       oauthTokenFilePath: session.oauthTokenFilePath,
     });
+
+    result = applyTaskBudget('spec_orchestrator', 'spec', 1, sessionResult);
   } finally {
     if (result?.error) {
       logSessionFailure(
@@ -1224,7 +1320,7 @@ async function runAgenticSpecOrchestrator(
   postMessage({
     type: 'result',
     taskId: config.taskId,
-    data: result as SessionResult,
+    data: result,
     projectId: config.projectId,
   });
 }

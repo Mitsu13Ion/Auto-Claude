@@ -66,7 +66,24 @@ export interface QAIssue {
 // Task Log Types - for persistent, phase-based logging
 export type TaskLogPhase = 'planning' | 'coding' | 'validation';
 export type TaskLogPhaseStatus = 'pending' | 'active' | 'completed' | 'failed';
-export type TaskLogEntryType = 'text' | 'tool_start' | 'tool_end' | 'phase_start' | 'phase_end' | 'error' | 'success' | 'info';
+export type TaskLogEntryType = 'text' | 'tool_start' | 'tool_end' | 'phase_start' | 'phase_end' | 'error' | 'success' | 'info' | 'metrics';
+
+export interface TaskRunMetrics {
+  agentType: string;
+  sessionNumber: number;
+  stepsExecuted: number;
+  toolCallCount: number;
+  continuationCount: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cumulativeSessions?: number;
+  cumulativeSteps?: number;
+  cumulativeToolCalls?: number;
+  cumulativeContinuations?: number;
+  cumulativeTokens?: number;
+  budgetLimitTokens?: number;
+}
 
 export interface TaskLogEntry {
   timestamp: string;
@@ -81,6 +98,7 @@ export interface TaskLogEntry {
   detail?: string;  // Full content that can be expanded (e.g., file contents, command output)
   subphase?: string;  // Subphase grouping (e.g., "PROJECT DISCOVERY", "CONTEXT GATHERING")
   collapsed?: boolean;  // Whether to show collapsed by default in UI
+  metrics?: TaskRunMetrics;
 }
 
 export interface TaskPhaseLog {

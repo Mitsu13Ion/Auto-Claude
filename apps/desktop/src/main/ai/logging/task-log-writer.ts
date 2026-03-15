@@ -17,7 +17,14 @@
 
 import { writeFileSync, readFileSync, existsSync, mkdirSync, renameSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import type { TaskLogs, TaskLogPhase, TaskLogPhaseStatus, TaskLogEntry, TaskLogEntryType } from '../../../shared/types';
+import type {
+  TaskLogs,
+  TaskLogPhase,
+  TaskLogPhaseStatus,
+  TaskLogEntry,
+  TaskLogEntryType,
+  TaskRunMetrics,
+} from '../../../shared/types';
 import type { StreamEvent } from '../session/types';
 import type { Phase } from '../config/types';
 
@@ -172,6 +179,26 @@ export class TaskLogWriter {
   logError(content: string, phase?: Phase, detail?: string): void {
     const logPhase = phase ? toLogPhase(phase) : this.currentPhase;
     this.addEntry(logPhase, 'error', content, detail ? { detail, collapsed: true } : undefined);
+    this.save();
+  }
+
+  /**
+   * Write a structured task-run metrics entry for session-level visibility.
+   */
+  logMetrics(metrics: TaskRunMetrics, phase?: Phase): void {
+    const logPhase = phase ? toLogPhase(phase) : this.currentPhase;
+    const content = [
+      `Session ${metrics.sessionNumber} (${metrics.agentType})`,
+      `${metrics.totalTokens.toLocaleString()} tokens`,
+      `${metrics.stepsExecuted} steps`,
+      `${metrics.toolCallCount} tools`,
+      `${metrics.continuationCount} continuations`,
+      metrics.cumulativeTokens !== undefined
+        ? `task total ${metrics.cumulativeTokens.toLocaleString()}`
+        : undefined,
+    ].filter(Boolean).join(' | ');
+
+    this.addEntry(logPhase, 'metrics', content, { metrics });
     this.save();
   }
 

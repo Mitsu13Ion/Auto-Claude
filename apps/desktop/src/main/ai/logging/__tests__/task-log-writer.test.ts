@@ -47,4 +47,46 @@ describe('TaskLogWriter', () => {
       ]),
     );
   });
+
+  it('persists session metrics entries for task usage visibility', () => {
+    const specDir = mkdtempSync(join(tmpdir(), 'task-log-writer-'));
+    tempDirs.push(specDir);
+
+    const writer = new TaskLogWriter(specDir, '050-test-task');
+    writer.startPhase('planning');
+    writer.logMetrics({
+      agentType: 'planner',
+      sessionNumber: 1,
+      stepsExecuted: 4,
+      toolCallCount: 2,
+      continuationCount: 1,
+      promptTokens: 1200,
+      completionTokens: 300,
+      totalTokens: 1500,
+      cumulativeTokens: 1500,
+      budgetLimitTokens: 900000,
+    }, 'planning');
+    writer.endPhase('planning', true);
+
+    const logFile = join(specDir, 'task_logs.json');
+    const logs = JSON.parse(readFileSync(logFile, 'utf-8')) as {
+      phases: {
+        planning: {
+          entries: Array<{ type: string; metrics?: { totalTokens: number; budgetLimitTokens?: number } }>;
+        };
+      };
+    };
+
+    expect(logs.phases.planning.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'metrics',
+          metrics: expect.objectContaining({
+            totalTokens: 1500,
+            budgetLimitTokens: 900000,
+          }),
+        }),
+      ]),
+    );
+  });
 });
