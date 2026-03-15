@@ -92,6 +92,7 @@ if (typeof window !== 'undefined') {
     getTasks: vi.fn(),
     createTask: vi.fn(),
     startTask: vi.fn(),
+    pauseTask: vi.fn(),
     stopTask: vi.fn(),
     submitReview: vi.fn(),
     onTaskProgress: vi.fn(() => vi.fn()),

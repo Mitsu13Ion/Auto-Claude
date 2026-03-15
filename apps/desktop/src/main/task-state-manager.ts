@@ -364,7 +364,9 @@ export class TaskStateManager {
       case 'in_progress':
         // Use executionProgress.phase to determine if we're in planning or coding
         // This is important because both phases have status 'in_progress'
-        if (executionPhase === 'planning') {
+        if (executionPhase === 'manual_paused' && task.xstateState) {
+          stateValue = task.xstateState;
+        } else if (executionPhase === 'planning') {
           stateValue = 'planning';
         } else if (executionPhase === 'qa_review') {
           stateValue = 'qa_review';

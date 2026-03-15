@@ -19,6 +19,7 @@ vi.stubGlobal('window', {
     getTasks: mockGetTasks,
     createTask: mockCreateTask,
     startTask: vi.fn(),
+    pauseTask: vi.fn(),
     stopTask: vi.fn(),
     submitReview: vi.fn(),
     updateTaskStatus: vi.fn(),

@@ -576,6 +576,7 @@ export class ProjectStore {
           metadata,
           ...(correctedReviewReason !== undefined && { reviewReason: correctedReviewReason }),
           ...(executionProgress && { executionProgress }),
+          ...(typeof xstateState === 'string' ? { xstateState } : {}),
           stagedInMainProject,
           stagedAt,
           location, // Add location metadata (main vs worktree)

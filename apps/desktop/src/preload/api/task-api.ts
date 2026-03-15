@@ -34,6 +34,7 @@ export interface TaskAPI {
     updates: { title?: string; description?: string }
   ) => Promise<IPCResult<Task>>;
   startTask: (taskId: string, options?: TaskStartOptions) => void;
+  pauseTask: (taskId: string) => Promise<IPCResult>;
   stopTask: (taskId: string) => void;
   submitReview: (
     taskId: string,
@@ -120,6 +121,9 @@ export const createTaskAPI = (): TaskAPI => ({
 
   startTask: (taskId: string, options?: TaskStartOptions): void =>
     ipcRenderer.send(IPC_CHANNELS.TASK_START, taskId, options),
+
+  pauseTask: (taskId: string): Promise<IPCResult> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TASK_PAUSE, taskId),
 
   stopTask: (taskId: string): void =>
     ipcRenderer.send(IPC_CHANNELS.TASK_STOP, taskId),

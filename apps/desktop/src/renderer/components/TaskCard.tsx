@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Play, Square, Clock, Zap, Target, Shield, Gauge, Palette, FileCode, Bug, Wrench, Loader2, AlertTriangle, RotateCcw, Archive, GitPullRequest, MoreVertical } from 'lucide-react';
+import { Play, Square, Pause, Clock, Zap, Target, Shield, Gauge, Palette, FileCode, Bug, Wrench, Loader2, AlertTriangle, RotateCcw, Archive, GitPullRequest, MoreVertical } from 'lucide-react';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -31,7 +31,7 @@ import {
   JSON_ERROR_PREFIX,
   JSON_ERROR_TITLE_SUFFIX
 } from '../../shared/constants';
-import { stopTask, checkTaskRunning, recoverStuckTask, isIncompleteHumanReview, isRetryableErrorTask, archiveTasks, hasRecentActivity, startTaskOrQueue } from '../stores/task-store';
+import { stopTask, pauseTask, resumeTask, checkTaskRunning, recoverStuckTask, isIncompleteHumanReview, isRetryableErrorTask, isPausedTask, archiveTasks, hasRecentActivity, startTaskOrQueue } from '../stores/task-store';
 import { useToast } from '../hooks/use-toast';
 import type { Task, TaskCategory, ReviewReason, TaskStatus } from '../../shared/types';
 
@@ -142,6 +142,7 @@ export const TaskCard = memo(function TaskCard({
   const isRunning = task.status === 'in_progress';
   const executionPhase = task.executionProgress?.phase;
   const hasActiveExecution = executionPhase && executionPhase !== 'idle' && executionPhase !== 'complete' && executionPhase !== 'failed';
+  const isPaused = isPausedTask(task);
 
   // Check if task is in human_review but has no completed subtasks (crashed/incomplete)
   const isIncomplete = isIncompleteHumanReview(task);
@@ -229,21 +230,41 @@ export const TaskCard = memo(function TaskCard({
 
   const handleStartStop = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isRunning) {
-      // Allow stopping both running and stuck tasks
-      // User should be able to force-stop a stuck task
-      stopTask(task.id);
-    } else {
-      const result = await startTaskOrQueue(task.id);
-      if (!result.success) {
-        toast({
-          title: t('tasks:wizard.errors.startFailed'),
-          description: result.error,
-          variant: 'destructive',
-        });
-      } else if (result.action === 'queued') {
-        toast({ title: t('tasks:queue.movedToQueue') });
-      }
+    const result = await startTaskOrQueue(task.id);
+    if (!result.success) {
+      toast({
+        title: t('tasks:wizard.errors.startFailed'),
+        description: result.error,
+        variant: 'destructive',
+      });
+    } else if (result.action === 'queued') {
+      toast({ title: t('tasks:queue.movedToQueue') });
+    }
+  };
+
+  const handlePause = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const result = await pauseTask(task.id);
+    if (!result.success) {
+      toast({
+        title: t('tasks:actions.pause'),
+        description: result.error,
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleResume = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const result = await resumeTask(task.id);
+    if (!result.success) {
+      toast({
+        title: t('tasks:actions.resume'),
+        description: result.error,
+        variant: 'destructive',
+      });
+    } else if (result.action === 'queued') {
+      toast({ title: t('tasks:queue.movedToQueue') });
     }
   };
 
@@ -412,7 +433,11 @@ export const TaskCard = memo(function TaskCard({
                   EXECUTION_PHASE_BADGE_COLORS[executionPhase]
                 )}
               >
-                <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                {isPaused ? (
+                  <Pause className="h-2.5 w-2.5" />
+                ) : (
+                  <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                )}
                 {EXECUTION_PHASE_LABELS[executionPhase]}
               </Badge>
             )}
@@ -607,15 +632,20 @@ export const TaskCard = memo(function TaskCard({
               </Button>
             ) : (task.status === 'backlog' || task.status === 'in_progress') && (
               <Button
-                variant={isRunning ? 'destructive' : 'default'}
+                variant={isRunning ? (isPaused ? 'default' : 'secondary') : 'default'}
                 size="sm"
                 className="h-7 px-2.5"
-                onClick={handleStartStop}
+                onClick={isRunning ? (isPaused ? handleResume : handlePause) : handleStartStop}
               >
-                {isRunning ? (
+                {isRunning ? isPaused ? (
                   <>
-                    <Square className="mr-1.5 h-3 w-3" />
-                    {t('actions.stop')}
+                    <Play className="mr-1.5 h-3 w-3" />
+                    {t('actions.resume')}
+                  </>
+                ) : (
+                  <>
+                    <Pause className="mr-1.5 h-3 w-3" />
+                    {t('actions.pause')}
                   </>
                 ) : (
                   <>
@@ -623,6 +653,21 @@ export const TaskCard = memo(function TaskCard({
                     {t('actions.start')}
                   </>
                 )}
+              </Button>
+            )}
+
+            {task.status === 'in_progress' && !isStuck && !isIncomplete && !isRetryableError && (
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-7 px-2"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  stopTask(task.id);
+                }}
+                title={t('actions.stop')}
+              >
+                <Square className="h-3 w-3" />
               </Button>
             )}
 

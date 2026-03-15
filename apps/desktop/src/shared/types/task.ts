@@ -287,6 +287,7 @@ export interface Task {
   stagedAt?: string;  // ISO timestamp when changes were staged
   location?: 'main' | 'worktree';  // Where task was loaded from (main project or worktree)
   specsPath?: string;  // Full path to specs directory for this task
+  xstateState?: string;  // Persisted XState machine state for restoration
   createdAt: Date;
   updatedAt: Date;
 }

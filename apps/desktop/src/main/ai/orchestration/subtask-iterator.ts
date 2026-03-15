@@ -47,6 +47,8 @@ export interface SubtaskIteratorConfig {
   maxNoProgressAttempts?: number;
   /** Abort signal for cancellation */
   abortSignal?: AbortSignal;
+  /** Called before starting a new coder session so orchestration can pause cooperatively */
+  pauseIfRequested?: (context: { currentSubtask?: string }) => Promise<void>;
   /**
    * Optional fallback spec dir in the main project (worktree mode).
    * Used to check for a RESUME file when the frontend can't find the worktree.
@@ -188,6 +190,12 @@ export async function iterateSubtasks(
       filesToModify: subtask.files_to_modify,
       status: subtask.status,
     };
+
+    await config.pauseIfRequested?.({ currentSubtask: subtask.id });
+
+    if (config.abortSignal?.aborted) {
+      return { totalSubtasks, completedSubtasks, stuckSubtasks, cancelled: true };
+    }
 
     // Track attempts
     const currentAttempt = (attemptCounts.get(subtask.id) ?? 0) + 1;

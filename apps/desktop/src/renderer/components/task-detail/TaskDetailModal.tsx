@@ -21,6 +21,7 @@ import {
 import {
   Play,
   Square,
+  Pause,
   CheckCircle2,
   RotateCcw,
   Trash2,
@@ -32,7 +33,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { calculateProgress } from '../../lib/utils';
-import { stopTask, submitReview, recoverStuckTask, deleteTask, useTaskStore, startTaskOrQueue, isRetryableErrorTask } from '../../stores/task-store';
+import { stopTask, pauseTask, resumeTask, submitReview, recoverStuckTask, deleteTask, useTaskStore, startTaskOrQueue, isRetryableErrorTask } from '../../stores/task-store';
 import { useProjectStore } from '../../stores/project-store';
 import { TASK_STATUS_LABELS } from '../../../shared/constants';
 import { TaskEditDialog } from '../TaskEditDialog';
@@ -90,32 +91,53 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
 
   // Event Handlers
   const handleStartStop = async () => {
-    if (state.isRunning && !state.isStuck) {
-      stopTask(task.id);
-    } else {
-      // If task is incomplete, validate and reload plan before starting
-      if (state.isIncomplete) {
-        const isValid = await state.reloadPlanForIncompleteTask();
-        if (!isValid) {
-          toast({
-            title: 'Cannot Resume Task',
-            description: 'Failed to load implementation plan. Please try again or check the task files.',
-            variant: 'destructive',
-            duration: 5000,
-          });
-          return;
-        }
-      }
-      const result = await startTaskOrQueue(task.id);
-      if (!result.success) {
+    // If task is incomplete, validate and reload plan before starting
+    if (state.isIncomplete) {
+      const isValid = await state.reloadPlanForIncompleteTask();
+      if (!isValid) {
         toast({
-          title: t('tasks:wizard.errors.startFailed'),
-          description: result.error,
+          title: 'Cannot Resume Task',
+          description: 'Failed to load implementation plan. Please try again or check the task files.',
           variant: 'destructive',
+          duration: 5000,
         });
-      } else if (result.action === 'queued') {
-        toast({ title: t('tasks:queue.movedToQueue') });
+        return;
       }
+    }
+
+    const result = await startTaskOrQueue(task.id);
+    if (!result.success) {
+      toast({
+        title: t('tasks:wizard.errors.startFailed'),
+        description: result.error,
+        variant: 'destructive',
+      });
+    } else if (result.action === 'queued') {
+      toast({ title: t('tasks:queue.movedToQueue') });
+    }
+  };
+
+  const handlePause = async () => {
+    const result = await pauseTask(task.id);
+    if (!result.success) {
+      toast({
+        title: t('tasks:actions.pause'),
+        description: result.error,
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleResume = async () => {
+    const result = await resumeTask(task.id);
+    if (!result.success) {
+      toast({
+        title: t('tasks:actions.resume'),
+        description: result.error,
+        variant: 'destructive',
+      });
+    } else if (result.action === 'queued') {
+      toast({ title: t('tasks:queue.movedToQueue') });
     }
   };
 
@@ -217,7 +239,7 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
 
   const handleClose = () => {
     // Show toast notification if task is running
-    if (state.isRunning && !state.isStuck) {
+    if (state.isRunning && !state.isStuck && !state.isPaused) {
       toast({
         title: t('tasks:notifications.backgroundTaskTitle'),
         description: t('tasks:notifications.backgroundTaskDescription'),
@@ -284,6 +306,15 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
       );
     }
 
+    if (state.isPaused) {
+      return (
+        <Button variant="default" onClick={handleResume}>
+          <Play className="mr-2 h-4 w-4" />
+          {t('tasks:actions.resume')}
+        </Button>
+      );
+    }
+
     if (isRetryableError) {
       return (
         <Button variant="default" onClick={handleStartStop}>
@@ -296,13 +327,13 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
     if (task.status === 'backlog' || task.status === 'in_progress') {
       return (
         <Button
-          variant={state.isRunning ? 'destructive' : 'default'}
-          onClick={handleStartStop}
+          variant={state.isRunning ? 'secondary' : 'default'}
+          onClick={state.isRunning ? handlePause : handleStartStop}
         >
           {state.isRunning ? (
             <>
-              <Square className="mr-2 h-4 w-4" />
-              Stop Task
+              <Pause className="mr-2 h-4 w-4" />
+              {t('tasks:actions.pause')}
             </>
           ) : (
             <>
@@ -614,6 +645,12 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                 Delete Task
               </Button>
               <div className="flex-1" />
+              {task.status === 'in_progress' && !state.isStuck && (
+                <Button variant="destructive" onClick={() => stopTask(task.id)}>
+                  <Square className="mr-2 h-4 w-4" />
+                  {t('tasks:actions.stop')}
+                </Button>
+              )}
               {renderPrimaryAction()}
               <Button variant="outline" onClick={handleClose}>
                 Close

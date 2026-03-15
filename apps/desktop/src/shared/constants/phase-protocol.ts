@@ -20,13 +20,14 @@ export const PHASE_PROTOCOL_VERSION = '1.0.0' as const;
  * Order matters for regression detection.
  *
  * 'idle' is frontend-only (initial state before any backend events)
- * 'rate_limit_paused' and 'auth_failure_paused' are pause states that
- * can occur during coding and will resume to coding when resolved.
+ * 'rate_limit_paused', 'auth_failure_paused', and 'manual_paused' are pause
+ * states that temporarily suspend execution until the task can continue.
  */
 export const EXECUTION_PHASES = [
   'idle',
   'planning',
   'coding',
+  'manual_paused',
   'rate_limit_paused',
   'auth_failure_paused',
   'qa_review',
@@ -42,6 +43,7 @@ export const EXECUTION_PHASES = [
 export const BACKEND_PHASES = [
   'planning',
   'coding',
+  'manual_paused',
   'rate_limit_paused',
   'auth_failure_paused',
   'qa_review',
@@ -65,13 +67,15 @@ export type CompletablePhase = 'planning' | 'coding' | 'qa_review' | 'qa_fixing'
  * Higher index = later in the pipeline.
  * Used to prevent fallback text matching from regressing phases.
  *
- * Pause phases (rate_limit_paused, auth_failure_paused) are at the same
- * level as coding since they pause during coding and resume to coding.
+ * Pause phases do not participate in strict ordering. They are handled as
+ * special cases in wouldPhaseRegress() so a paused task can resume back to
+ * its active phase without being rejected as a regression.
  */
 export const PHASE_ORDER_INDEX: Readonly<Record<ExecutionPhase, number>> = {
   idle: -1,
   planning: 0,
   coding: 1,
+  manual_paused: 1,
   rate_limit_paused: 1,  // Same level as coding (pause during coding)
   auth_failure_paused: 1,  // Same level as coding (pause during coding)
   qa_review: 2,
@@ -90,7 +94,7 @@ export const TERMINAL_PHASES: ReadonlySet<ExecutionPhase> = new Set(['complete',
  * Pause phases that represent temporary paused states during execution.
  * These phases will eventually resume to their previous active phase.
  */
-export const PAUSE_PHASES: ReadonlySet<ExecutionPhase> = new Set(['rate_limit_paused', 'auth_failure_paused']);
+export const PAUSE_PHASES: ReadonlySet<ExecutionPhase> = new Set(['manual_paused', 'rate_limit_paused', 'auth_failure_paused']);
 
 /**
  * Check if a phase is a pause state.
@@ -111,6 +115,18 @@ export function isPausePhase(phase: ExecutionPhase): boolean {
  * @returns true if transitioning to newPhase would be a regression
  */
 export function wouldPhaseRegress(currentPhase: ExecutionPhase, newPhase: ExecutionPhase): boolean {
+  if (
+    newPhase === 'manual_paused' &&
+    currentPhase !== 'idle' &&
+    !isTerminalPhase(currentPhase)
+  ) {
+    return false;
+  }
+
+  if (currentPhase === 'manual_paused' && !isTerminalPhase(newPhase)) {
+    return false;
+  }
+
   const currentIndex = PHASE_ORDER_INDEX[currentPhase];
   const newIndex = PHASE_ORDER_INDEX[newPhase];
   return newIndex < currentIndex;
@@ -188,6 +204,7 @@ export function isValidPhaseTransition(
     idle: [],
     planning: [],
     coding: ['planning'],
+    manual_paused: [],
     rate_limit_paused: [],  // Can pause from coding
     auth_failure_paused: [],  // Can pause from coding
     qa_review: ['coding'],
@@ -209,6 +226,18 @@ export function isValidPhaseTransition(
   }
   if (currentPhase === 'qa_fixing' && newPhase === 'qa_review') {
     return true; // Re-running QA after fixes
+  }
+  if (newPhase === 'manual_paused') {
+    return currentPhase === 'planning'
+      || currentPhase === 'coding'
+      || currentPhase === 'qa_review'
+      || currentPhase === 'qa_fixing';
+  }
+  if (currentPhase === 'manual_paused') {
+    return newPhase === 'planning'
+      || newPhase === 'coding'
+      || newPhase === 'qa_review'
+      || newPhase === 'qa_fixing';
   }
   if (currentPhase === 'coding' && isPausePhase(newPhase)) {
     return true; // Pausing during coding
@@ -248,6 +277,7 @@ export function getExpectedPreviousPhase(phase: ExecutionPhase): ExecutionPhase 
     idle: null,
     planning: 'idle',
     coding: 'planning',
+    manual_paused: null,  // Can pause from multiple active phases
     rate_limit_paused: 'coding',  // Pause from coding
     auth_failure_paused: 'coding',  // Pause from coding
     qa_review: 'coding',

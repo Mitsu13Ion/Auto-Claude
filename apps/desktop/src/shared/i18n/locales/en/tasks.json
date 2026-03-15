@@ -12,6 +12,7 @@
   },
   "actions": {
     "start": "Start",
+    "pause": "Pause",
     "stop": "Stop",
     "retry": "Retry",
     "retryTask": "Retry Task",
@@ -144,6 +145,7 @@
       "idle": "Idle",
       "planning": "Planning",
       "coding": "Coding",
+      "manual_paused": "Paused",
       "rate_limit_paused": "Rate Limited",
       "auth_failure_paused": "Auth Required",
       "reviewing": "Reviewing",

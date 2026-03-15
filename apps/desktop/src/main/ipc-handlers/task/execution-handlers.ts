@@ -14,6 +14,7 @@ import { taskStateManager } from '../../task-state-manager';
 import {
   getPlanPath,
   persistPlanStatus,
+  persistPlanStatusAndReasonSync,
   createPlanIfNotExists,
   resetStuckSubtasks,
   hasPlanWithSubtasks
@@ -25,6 +26,16 @@ import { getIsolatedGitEnv, detectWorktreeBranch } from '../../utils/git-isolati
 import { cancelFallbackTimer } from '../agent-events-handlers';
 import { readSettingsFile } from '../../settings-utils';
 import type { ProviderAccount } from '../../../shared/types/provider-account';
+import {
+  AUTH_FAILURE_PAUSE_FILE,
+  HUMAN_INTERVENTION_FILE,
+  RATE_LIMIT_PAUSE_FILE,
+  RESUME_FILE,
+  removePauseFile,
+  writeHumanPauseFile,
+  type HumanPauseData
+} from '../../ai/orchestration/pause-handler';
+import type { ExecutionPhase } from '../../../shared/constants/phase-protocol';
 
 /**
  * Check if any provider account is configured (API key or OAuth).
@@ -109,6 +120,30 @@ function getSpecDirForWatcher(projectPath: string, specsBaseDir: string, specId:
     }
   }
   return path.join(projectPath, specsBaseDir, specId);
+}
+
+function resolvePausePhase(taskPhase: ExecutionPhase | undefined, xstateState?: string): ExecutionPhase {
+  if (
+    taskPhase &&
+    taskPhase !== 'idle' &&
+    taskPhase !== 'complete' &&
+    taskPhase !== 'failed' &&
+    taskPhase !== 'manual_paused'
+  ) {
+    return taskPhase;
+  }
+
+  switch (xstateState) {
+    case 'planning':
+    case 'plan_review':
+      return 'planning';
+    case 'qa_review':
+      return 'qa_review';
+    case 'qa_fixing':
+      return 'qa_fixing';
+    default:
+      return 'coding';
+  }
 }
 
 /**
@@ -362,6 +397,108 @@ export function registerTaskExecutionHandlers(
   );
 
   /**
+   * Pause a task cooperatively at the next safe checkpoint.
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.TASK_PAUSE,
+    async (_, taskId: string): Promise<IPCResult> => {
+      const mainWindow = getMainWindow();
+      const { task, project } = findTaskAndProject(taskId);
+
+      if (!task || !project) {
+        return { success: false, error: 'Task not found' };
+      }
+
+      if (task.status !== 'in_progress') {
+        return { success: false, error: 'Only running tasks can be paused' };
+      }
+
+      if (!agentManager.isRunning(taskId)) {
+        return { success: false, error: 'Task is not currently running' };
+      }
+
+      const currentXState = taskStateManager.getCurrentState(taskId) ?? task.xstateState;
+      const activePhase = resolvePausePhase(task.executionProgress?.phase, currentXState);
+      const pauseData: HumanPauseData = {
+        pausedAt: new Date().toISOString(),
+        pausedBy: 'user',
+        activePhase,
+        phaseProgress: task.executionProgress?.phaseProgress ?? 0,
+        overallProgress: task.executionProgress?.overallProgress ?? 0,
+        currentSubtask: task.executionProgress?.currentSubtask,
+        xstateState: currentXState,
+        message: `Pause requested by user during ${activePhase}`,
+      };
+
+      const specsBaseDir = getSpecsDir(project.autoBuildPath);
+      const specDir = task.specsPath || path.join(project.path, specsBaseDir, task.specId);
+      const worktreePath = findTaskWorktree(project.path, task.specId);
+
+      try {
+        writeHumanPauseFile(specDir, pauseData);
+
+        if (worktreePath) {
+          const worktreeSpecDir = path.join(worktreePath, specsBaseDir, task.specId);
+          try {
+            writeHumanPauseFile(worktreeSpecDir, pauseData);
+          } catch (worktreeError) {
+            console.warn('[TASK_PAUSE] Could not write PAUSE file to worktree (non-fatal):', worktreeError);
+          }
+        }
+
+        persistPlanStatusAndReasonSync(
+          getPlanPath(project, task),
+          'in_progress',
+          undefined,
+          project.id,
+          currentXState,
+          task.executionProgress?.phase,
+        );
+
+        if (worktreePath) {
+          const worktreePlanPath = path.join(
+            worktreePath,
+            specsBaseDir,
+            task.specId,
+            AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN,
+          );
+          if (existsSync(worktreePlanPath)) {
+            persistPlanStatusAndReasonSync(
+              worktreePlanPath,
+              'in_progress',
+              undefined,
+              project.id,
+              currentXState,
+              task.executionProgress?.phase,
+            );
+          }
+        }
+
+        mainWindow?.webContents.send(
+          IPC_CHANNELS.TASK_EXECUTION_PROGRESS,
+          taskId,
+          {
+            phase: activePhase,
+            phaseProgress: pauseData.phaseProgress ?? 0,
+            overallProgress: pauseData.overallProgress ?? 0,
+            currentSubtask: pauseData.currentSubtask,
+            message: 'Pause requested — waiting for the current agent step to finish safely',
+          },
+          project.id,
+        );
+
+        return { success: true };
+      } catch (error) {
+        console.error('[TASK_PAUSE] Failed to write PAUSE file:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to pause task',
+        };
+      }
+    },
+  );
+
+  /**
    * Stop a task
    */
   ipcMain.on(IPC_CHANNELS.TASK_STOP, (_, taskId: string) => {
@@ -374,6 +511,21 @@ export function registerTaskExecutionHandlers(
     const { task, project } = findTaskAndProject(taskId);
 
     if (!task || !project) return;
+
+    const specsBaseDir = getSpecsDir(project.autoBuildPath);
+    const mainSpecDir = task.specsPath || path.join(project.path, specsBaseDir, task.specId);
+    const worktreePath = findTaskWorktree(project.path, task.specId);
+    const candidateSpecDirs = [
+      mainSpecDir,
+      ...(worktreePath ? [path.join(worktreePath, specsBaseDir, task.specId)] : []),
+    ];
+
+    for (const candidateSpecDir of candidateSpecDirs) {
+      removePauseFile(candidateSpecDir, HUMAN_INTERVENTION_FILE);
+      removePauseFile(candidateSpecDir, RESUME_FILE);
+      removePauseFile(candidateSpecDir, RATE_LIMIT_PAUSE_FILE);
+      removePauseFile(candidateSpecDir, AUTH_FAILURE_PAUSE_FILE);
+    }
 
     // Use shared utility to determine if a valid implementation plan exists
     const hasPlan = hasPlanWithSubtasks(project, task);
@@ -930,8 +1082,8 @@ export function registerTaskExecutionHandlers(
   );
 
   /**
-   * Resume a paused task (rate limited or auth failure paused)
-   * This writes a RESUME file to the spec directory to signal the backend to continue
+   * Resume a paused task by writing a RESUME file for the worker.
+   * If the worker is no longer alive, fall back to restarting the task from disk state.
    */
   ipcMain.handle(
     IPC_CHANNELS.TASK_RESUME_PAUSED,
@@ -950,6 +1102,10 @@ export function registerTaskExecutionHandlers(
         specsBaseDir,
         task.specId
       );
+
+      if (!agentManager.isRunning(taskId)) {
+        console.warn(`[TASK_RESUME_PAUSED] Task ${taskId} is not running, writing RESUME anyway so a restart can continue`);
+      }
 
       // Write RESUME file to signal backend to continue
       const resumeFilePath = path.join(specDir, 'RESUME');
@@ -974,6 +1130,7 @@ export function registerTaskExecutionHandlers(
             console.warn(`[TASK_RESUME_PAUSED] Could not write to worktree (non-fatal):`, worktreeError);
           }
         } else if (
+          task.executionProgress?.phase === 'manual_paused' ||
           task.executionProgress?.phase === 'rate_limit_paused' ||
           task.executionProgress?.phase === 'auth_failure_paused'
         ) {

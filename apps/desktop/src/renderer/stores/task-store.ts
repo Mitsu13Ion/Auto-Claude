@@ -3,6 +3,7 @@ import { arrayMove } from '@dnd-kit/sortable';
 import type { Task, TaskStatus, SubtaskStatus, ImplementationPlan, Subtask, TaskMetadata, ExecutionProgress, ExecutionPhase, ReviewReason, TaskDraft, ImageAttachment, TaskOrderState } from '../../shared/types';
 import { debugLog, debugWarn } from '../../shared/utils/debug-logger';
 import { useProjectStore } from './project-store';
+import { isPausePhase } from '../../shared/constants/phase-protocol';
 
 /** Default max parallel tasks when no project setting is configured */
 export const DEFAULT_MAX_PARALLEL_TASKS = 3;
@@ -770,6 +771,23 @@ export function startTask(taskId: string, options?: { parallel?: boolean; worker
 }
 
 /**
+ * Pause a task cooperatively at the next safe checkpoint.
+ */
+export async function pauseTask(taskId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const result = await window.electronAPI.pauseTask(taskId);
+    return result.success
+      ? { success: true }
+      : { success: false, error: result.error || 'Failed to pause task' };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to pause task',
+    };
+  }
+}
+
+/**
  * Stop a task
  */
 export function stopTask(taskId: string): void {
@@ -874,6 +892,12 @@ export interface StartTaskOrQueueResult {
   error?: string;
 }
 
+export interface ResumeTaskResult {
+  action: 'resumed' | 'started' | 'queued';
+  success: boolean;
+  error?: string;
+}
+
 /**
  * Start a task or queue it if parallel task capacity is full.
  * If the task is already in_progress (stuck restart), it is excluded from the
@@ -900,6 +924,41 @@ export async function startTaskOrQueue(taskId: string): Promise<StartTaskOrQueue
 
   startTask(taskId);
   return { action: 'started', success: true };
+}
+
+/**
+ * Resume a paused task. If the worker is gone, restart from the persisted task state.
+ */
+export async function resumeTask(taskId: string): Promise<ResumeTaskResult> {
+  const running = await checkTaskRunning(taskId);
+  if (!running) {
+    const resumeSignal = await window.electronAPI.resumePausedTask(taskId);
+    if (!resumeSignal.success) {
+      return {
+        action: 'resumed',
+        success: false,
+        error: resumeSignal.error || 'Failed to clear pause state before restart',
+      };
+    }
+
+    const restarted = await startTaskOrQueue(taskId);
+    return restarted.success
+      ? { action: restarted.action, success: true }
+      : { action: restarted.action, success: false, error: restarted.error };
+  }
+
+  try {
+    const result = await window.electronAPI.resumePausedTask(taskId);
+    return result.success
+      ? { action: 'resumed', success: true }
+      : { action: 'resumed', success: false, error: result.error || 'Failed to resume task' };
+  } catch (error) {
+    return {
+      action: 'resumed',
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to resume task',
+    };
+  }
 }
 
 /**
@@ -1226,6 +1285,15 @@ export function isIncompleteHumanReview(task: Task): boolean {
  */
 export function isRetryableErrorTask(task: Task): boolean {
   return task.status === 'error' || (task.status === 'human_review' && task.reviewReason === 'errors');
+}
+
+/**
+ * Check if a task is currently in any paused execution phase.
+ */
+export function isPausedTask(task: Task): boolean {
+  return task.status === 'in_progress'
+    && !!task.executionProgress?.phase
+    && isPausePhase(task.executionProgress.phase);
 }
 
 /**

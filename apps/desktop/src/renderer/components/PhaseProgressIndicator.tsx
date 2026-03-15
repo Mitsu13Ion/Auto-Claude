@@ -20,6 +20,7 @@ const PHASE_COLORS: Record<ExecutionPhase, { color: string; bgColor: string }> =
   idle: { color: 'bg-muted-foreground', bgColor: 'bg-muted' },
   planning: { color: 'bg-amber-500', bgColor: 'bg-amber-500/20' },
   coding: { color: 'bg-info', bgColor: 'bg-info/20' },
+  manual_paused: { color: 'bg-slate-500', bgColor: 'bg-slate-500/20' },
   rate_limit_paused: { color: 'bg-orange-500', bgColor: 'bg-orange-500/20' },
   auth_failure_paused: { color: 'bg-red-500', bgColor: 'bg-red-500/20' },
   qa_review: { color: 'bg-purple-500', bgColor: 'bg-purple-500/20' },
@@ -33,6 +34,7 @@ const PHASE_LABEL_KEYS: Record<ExecutionPhase, string> = {
   idle: 'execution.phases.idle',
   planning: 'execution.phases.planning',
   coding: 'execution.phases.coding',
+  manual_paused: 'execution.phases.manual_paused',
   rate_limit_paused: 'execution.phases.rate_limit_paused',
   auth_failure_paused: 'execution.phases.auth_failure_paused',
   qa_review: 'execution.phases.reviewing',
@@ -88,7 +90,8 @@ export const PhaseProgressIndicator = memo(function PhaseProgressIndicator({
   }, []);
 
   // Only animate when visible and running
-  const shouldAnimate = isVisible && isRunning && !isStuck;
+  const isPausedPhase = phase === 'manual_paused' || phase === 'rate_limit_paused' || phase === 'auth_failure_paused';
+  const shouldAnimate = isVisible && isRunning && !isStuck && !isPausedPhase;
 
   // Calculate subtask-based progress (for coding phase)
   const completedSubtasks = subtasks.filter((c) => c.status === 'completed').length;

@@ -32,6 +32,8 @@ import {
 } from '../schema';
 import type { ZodSchema } from 'zod';
 import type { SessionResult } from '../session/types';
+import { readHumanPauseData, waitForHumanResume } from './pause-handler';
+import type { ExecutionPhase } from '../../../shared/constants/phase-protocol';
 
 // =============================================================================
 // Constants
@@ -205,6 +207,13 @@ export interface SpecOrchestratorEvents {
   'spec-complete': (outcome: SpecOutcome) => void;
   /** Log message */
   'log': (message: string) => void;
+  /** Execution progress update for pause/resume checkpoints */
+  'execution-progress': (progress: {
+    phase: ExecutionPhase;
+    phaseProgress: number;
+    overallProgress: number;
+    message: string;
+  }) => void;
   /** Error occurred */
   'error': (error: Error, phase: SpecPhase) => void;
 }
@@ -294,6 +303,8 @@ export class SpecOrchestrator extends EventEmitter {
           return this.outcome(false, phasesExecuted, Date.now() - startTime, 'Cancelled');
         }
 
+        await this.waitForManualPause(1, 1, 'Paused before complexity assessment');
+
         const assessResult = await this.runComplexityAssessment(1);
         phasesExecuted.push('complexity_assessment');
         await this.capturePhaseOutput('complexity_assessment');
@@ -348,6 +359,12 @@ export class SpecOrchestrator extends EventEmitter {
         if (this.aborted) {
           return this.outcome(false, phasesExecuted, Date.now() - startTime, 'Cancelled');
         }
+
+        await this.waitForManualPause(
+          phasesExecuted.length + 1,
+          phasesToRun.length + (phasesExecuted.includes('complexity_assessment') ? 1 : 0),
+          `Paused before spec phase ${phase}`,
+        );
 
         const result = await this.runPhase(phase, phasesExecuted.length + 1, phasesToRun.length + (phasesExecuted.includes('complexity_assessment') ? 1 : 0));
         phasesExecuted.push(phase);
@@ -738,5 +755,42 @@ export class SpecOrchestrator extends EventEmitter {
     ...args: Parameters<SpecOrchestratorEvents[K]>
   ): void {
     this.emit(event, ...args);
+  }
+
+  private async waitForManualPause(
+    phaseNumber: number,
+    totalPhases: number,
+    fallbackMessage: string,
+  ): Promise<void> {
+    const pauseData = readHumanPauseData(this.config.specDir);
+    if (!pauseData) {
+      return;
+    }
+
+    const normalizedTotal = Math.max(totalPhases, 1);
+    const phaseProgress = pauseData.phaseProgress ?? Math.round((phaseNumber / normalizedTotal) * 100);
+    const overallProgress = pauseData.overallProgress ?? phaseProgress;
+
+    this.emitTyped('log', 'Manual pause requested during spec orchestration');
+    this.emitTyped('execution-progress', {
+      phase: 'manual_paused',
+      phaseProgress,
+      overallProgress,
+      message: pauseData.message ?? fallbackMessage,
+    });
+
+    await waitForHumanResume(this.config.specDir, undefined, this.config.abortSignal);
+
+    if (this.aborted) {
+      return;
+    }
+
+    this.emitTyped('log', 'Resuming spec orchestration after user pause');
+    this.emitTyped('execution-progress', {
+      phase: 'planning',
+      phaseProgress,
+      overallProgress,
+      message: 'Resuming spec orchestration after user pause',
+    });
   }
 }

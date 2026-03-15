@@ -31,6 +31,8 @@ import type { Phase } from '../config/types';
 import { QASignoffSchema, validateStructuredOutput } from '../schema';
 import { safeParseJson } from '../../utils/json-repair';
 import type { SessionResult } from '../session/types';
+import { readHumanPauseData, waitForHumanResume } from './pause-handler';
+import type { ExecutionPhase } from '../../../shared/constants/phase-protocol';
 
 // =============================================================================
 // Constants
@@ -140,6 +142,13 @@ export interface QALoopEvents {
   'qa-complete': (outcome: QAOutcome) => void;
   /** Log message */
   'log': (message: string) => void;
+  /** Execution progress update for pause/resume checkpoints */
+  'execution-progress': (progress: {
+    phase: ExecutionPhase;
+    phaseProgress: number;
+    overallProgress: number;
+    message: string;
+  }) => void;
   /** Error during QA */
   'error': (error: Error) => void;
 }
@@ -219,6 +228,7 @@ export class QALoop extends EventEmitter {
 
       // Process human feedback first if present
       if (hasHumanFeedback) {
+        await this.waitForManualPause('qa_fixing', 'Paused before processing human QA feedback');
         await this.processHumanFeedback();
       }
 
@@ -232,6 +242,8 @@ export class QALoop extends EventEmitter {
         if (this.aborted) {
           return this.outcome(false, iteration - 1, Date.now() - startTime, 'cancelled');
         }
+
+        await this.waitForManualPause('qa_review', 'Paused before QA review');
 
         const iterationStart = Date.now();
         this.emitTyped('qa-iteration-start', iteration, maxIterations);
@@ -344,6 +356,9 @@ export class QALoop extends EventEmitter {
 
           // Run QA fixer
           this.emitTyped('qa-fix-start', iteration);
+
+          await this.waitForManualPause('qa_fixing', 'Paused before QA fixing');
+
           this.sessionNumber++;
 
           const fixPrompt = await this.config.generatePrompt('qa_fixer', {
@@ -696,5 +711,40 @@ export class QALoop extends EventEmitter {
     ...args: Parameters<QALoopEvents[K]>
   ): void {
     this.emit(event, ...args);
+  }
+
+  private async waitForManualPause(
+    activePhase: Extract<ExecutionPhase, 'qa_review' | 'qa_fixing'>,
+    fallbackMessage: string,
+  ): Promise<void> {
+    const pauseData = readHumanPauseData(this.config.specDir);
+    if (!pauseData) {
+      return;
+    }
+
+    const phaseProgress = pauseData.phaseProgress ?? 50;
+    const overallProgress = pauseData.overallProgress ?? 90;
+
+    this.emitTyped('log', `Manual pause requested during ${activePhase}`);
+    this.emitTyped('execution-progress', {
+      phase: 'manual_paused',
+      phaseProgress,
+      overallProgress,
+      message: pauseData.message ?? fallbackMessage,
+    });
+
+    await waitForHumanResume(this.config.specDir, undefined, this.config.abortSignal);
+
+    if (this.aborted) {
+      return;
+    }
+
+    this.emitTyped('log', `Resuming ${activePhase} after user pause`);
+    this.emitTyped('execution-progress', {
+      phase: activePhase,
+      phaseProgress,
+      overallProgress,
+      message: `Resuming ${activePhase.replace(/_/g, ' ')} after user pause`,
+    });
   }
 }

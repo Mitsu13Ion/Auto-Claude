@@ -26,12 +26,13 @@ export const IPC_CHANNELS = {
   TASK_DELETE: 'task:delete',
   TASK_UPDATE: 'task:update',
   TASK_START: 'task:start',
+  TASK_PAUSE: 'task:pause',
   TASK_STOP: 'task:stop',
   TASK_REVIEW: 'task:review',
   TASK_UPDATE_STATUS: 'task:updateStatus',
   TASK_RECOVER_STUCK: 'task:recoverStuck',
   TASK_CHECK_RUNNING: 'task:checkRunning',
-  TASK_RESUME_PAUSED: 'task:resumePaused',  // Resume a rate-limited or auth-paused task
+  TASK_RESUME_PAUSED: 'task:resumePaused',  // Resume any paused task (manual, rate-limit, auth)
   TASK_LOAD_IMAGE_THUMBNAIL: 'task:loadImageThumbnail',
   TASK_CHECK_WORKTREE_CHANGES: 'task:checkWorktreeChanges',
 

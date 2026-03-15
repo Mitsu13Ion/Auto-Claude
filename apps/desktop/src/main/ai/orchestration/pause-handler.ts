@@ -12,6 +12,7 @@
 
 import { existsSync, unlinkSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { ExecutionPhase } from '../../../shared/constants/phase-protocol';
 
 // =============================================================================
 // Constants — see apps/desktop/src/main/ai/orchestration/pause-handler.ts
@@ -41,6 +42,9 @@ const AUTH_RESUME_CHECK_INTERVAL_MS = 10_000;
 /** Maximum time to wait for user to re-authenticate (24 hours). */
 const AUTH_RESUME_MAX_WAIT_MS = 86_400_000;
 
+/** Interval for polling during manual pause (1 s). */
+const HUMAN_RESUME_CHECK_INTERVAL_MS = 1_000;
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -59,6 +63,18 @@ export interface AuthPauseData {
   requiresAction: 're-authenticate';
 }
 
+/** Data written to PAUSE when a user pauses a task cooperatively. */
+export interface HumanPauseData {
+  pausedAt: string;
+  pausedBy: 'user';
+  activePhase?: ExecutionPhase;
+  phaseProgress?: number;
+  overallProgress?: number;
+  currentSubtask?: string;
+  xstateState?: string;
+  message?: string;
+}
+
 // =============================================================================
 // Internal helpers
 // =============================================================================
@@ -73,6 +89,7 @@ function checkAndClearResumeFile(
   resumeFile: string,
   pauseFile: string,
   fallbackResumeFile?: string,
+  fallbackPauseFile?: string,
 ): boolean {
   let found = existsSync(resumeFile);
 
@@ -84,6 +101,7 @@ function checkAndClearResumeFile(
   if (found) {
     try { unlinkSync(resumeFile); } catch { /* ignore */ }
     try { unlinkSync(pauseFile); } catch { /* ignore */ }
+    try { if (fallbackPauseFile && existsSync(fallbackPauseFile)) unlinkSync(fallbackPauseFile); } catch { /* ignore */ }
   }
 
   return found;
@@ -137,6 +155,13 @@ export function writeAuthPauseFile(specDir: string, error: string): void {
 }
 
 /**
+ * Write a cooperative human pause file so orchestrators can stop at a safe checkpoint.
+ */
+export function writeHumanPauseFile(specDir: string, data: HumanPauseData): void {
+  writeFileSync(join(specDir, HUMAN_INTERVENTION_FILE), JSON.stringify(data, null, 2), 'utf8');
+}
+
+/**
  * Read and parse the contents of a pause file.
  * Returns null if the file does not exist or cannot be parsed.
  */
@@ -185,13 +210,14 @@ export async function waitForRateLimitResume(
   const resumeFile = join(specDir, RESUME_FILE);
   const pauseFile = join(specDir, RATE_LIMIT_PAUSE_FILE);
   const fallbackResume = sourceSpecDir ? join(sourceSpecDir, RESUME_FILE) : undefined;
+  const fallbackPause = sourceSpecDir ? join(sourceSpecDir, RATE_LIMIT_PAUSE_FILE) : undefined;
 
   const deadline = Date.now() + effectiveWait;
 
   while (Date.now() < deadline) {
     if (signal?.aborted) break;
 
-    if (checkAndClearResumeFile(resumeFile, pauseFile, fallbackResume)) {
+    if (checkAndClearResumeFile(resumeFile, pauseFile, fallbackResume, fallbackPause)) {
       return true;
     }
 
@@ -228,6 +254,7 @@ export async function waitForAuthResume(
   const resumeFile = join(specDir, RESUME_FILE);
   const pauseFile = join(specDir, AUTH_FAILURE_PAUSE_FILE);
   const fallbackResume = sourceSpecDir ? join(sourceSpecDir, RESUME_FILE) : undefined;
+  const fallbackPause = sourceSpecDir ? join(sourceSpecDir, AUTH_FAILURE_PAUSE_FILE) : undefined;
 
   const deadline = Date.now() + AUTH_RESUME_MAX_WAIT_MS;
 
@@ -235,7 +262,7 @@ export async function waitForAuthResume(
     if (signal?.aborted) break;
 
     // Check for explicit RESUME file
-    if (checkAndClearResumeFile(resumeFile, pauseFile, fallbackResume)) {
+    if (checkAndClearResumeFile(resumeFile, pauseFile, fallbackResume, fallbackPause)) {
       return;
     }
 
@@ -272,5 +299,80 @@ export function checkHumanIntervention(specDir: string): string | null {
     return readFileSync(pauseFile, 'utf8').trim();
   } catch {
     return '';
+  }
+}
+
+/**
+ * Read and parse a manual pause file from the current or fallback spec dir.
+ */
+export function readHumanPauseData(specDir: string, sourceSpecDir?: string): HumanPauseData | null {
+  const candidates = [
+    join(specDir, HUMAN_INTERVENTION_FILE),
+    ...(sourceSpecDir ? [join(sourceSpecDir, HUMAN_INTERVENTION_FILE)] : []),
+  ];
+
+  for (const filePath of candidates) {
+    if (!existsSync(filePath)) continue;
+    try {
+      const raw = readFileSync(filePath, 'utf8');
+      const parsed = JSON.parse(raw) as Partial<HumanPauseData>;
+      return {
+        pausedAt: parsed.pausedAt ?? new Date().toISOString(),
+        pausedBy: 'user',
+        activePhase: parsed.activePhase,
+        phaseProgress: parsed.phaseProgress,
+        overallProgress: parsed.overallProgress,
+        currentSubtask: parsed.currentSubtask,
+        xstateState: parsed.xstateState,
+        message: parsed.message,
+      };
+    } catch {
+      return {
+        pausedAt: new Date().toISOString(),
+        pausedBy: 'user',
+        message: checkHumanIntervention(specDir) ?? undefined,
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Wait until a manual pause is resumed or removed.
+ * Returns the pause metadata that was active when waiting began.
+ */
+export async function waitForHumanResume(
+  specDir: string,
+  sourceSpecDir?: string,
+  signal?: AbortSignal,
+): Promise<HumanPauseData | null> {
+  const pauseData = readHumanPauseData(specDir, sourceSpecDir);
+  if (!pauseData) return null;
+
+  const resumeFile = join(specDir, RESUME_FILE);
+  const pauseFile = join(specDir, HUMAN_INTERVENTION_FILE);
+  const fallbackResume = sourceSpecDir ? join(sourceSpecDir, RESUME_FILE) : undefined;
+  const fallbackPause = sourceSpecDir ? join(sourceSpecDir, HUMAN_INTERVENTION_FILE) : undefined;
+
+  while (true) {
+    if (signal?.aborted) {
+      return pauseData;
+    }
+
+    if (checkAndClearResumeFile(resumeFile, pauseFile, fallbackResume, fallbackPause)) {
+      return pauseData;
+    }
+
+    const pauseStillActive = existsSync(pauseFile) || (fallbackPause ? existsSync(fallbackPause) : false);
+    if (!pauseStillActive) {
+      try { if (existsSync(resumeFile)) unlinkSync(resumeFile); } catch { /* ignore */ }
+      if (fallbackResume) {
+        try { if (existsSync(fallbackResume)) unlinkSync(fallbackResume); } catch { /* ignore */ }
+      }
+      return pauseData;
+    }
+
+    await sleep(HUMAN_RESUME_CHECK_INTERVAL_MS, signal);
   }
 }

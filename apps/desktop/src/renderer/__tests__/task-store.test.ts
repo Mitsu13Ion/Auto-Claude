@@ -3,7 +3,7 @@
  * Tests Zustand store for task state management
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { useTaskStore, hasRecentActivity, clearTaskActivity, isRetryableErrorTask } from '../stores/task-store';
+import { useTaskStore, hasRecentActivity, clearTaskActivity, isRetryableErrorTask, isPausedTask } from '../stores/task-store';
 import type { Task, TaskStatus, ImplementationPlan } from '../../shared/types';
 
 // Helper to create test tasks
@@ -589,6 +589,34 @@ describe('Task Store', () => {
         expect(tasks).toHaveLength(1);
         expect(tasks[0].status).toBe(status);
       });
+    });
+  });
+
+  describe('pause helpers', () => {
+    it('detects paused in-progress tasks from execution phase', () => {
+      const task = createTestTask({
+        status: 'in_progress',
+        executionProgress: {
+          phase: 'manual_paused',
+          phaseProgress: 60,
+          overallProgress: 60,
+        },
+      });
+
+      expect(isPausedTask(task)).toBe(true);
+    });
+
+    it('does not treat active coding tasks as paused', () => {
+      const task = createTestTask({
+        status: 'in_progress',
+        executionProgress: {
+          phase: 'coding',
+          phaseProgress: 20,
+          overallProgress: 35,
+        },
+      });
+
+      expect(isPausedTask(task)).toBe(false);
     });
   });
 

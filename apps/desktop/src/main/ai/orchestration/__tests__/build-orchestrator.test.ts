@@ -208,4 +208,59 @@ describe('BuildOrchestrator', () => {
       expect.objectContaining({ agentType: 'qa_reviewer' }),
     );
   }, 15_000);
+
+  it('waits on a manual pause file before starting the next coder session', async () => {
+    await writeFile(
+      join(specDir, 'PAUSE'),
+      JSON.stringify({
+        pausedAt: new Date().toISOString(),
+        pausedBy: 'user',
+        activePhase: 'coding',
+        phaseProgress: 42,
+        overallProgress: 58,
+        currentSubtask: 'subtask-1',
+        message: 'Pause requested by user during coding',
+      }, null, 2),
+    );
+
+    setTimeout(() => {
+      void writeFile(
+        join(specDir, 'RESUME'),
+        JSON.stringify({ resumedAt: new Date().toISOString(), resumedBy: 'user' }, null, 2),
+      );
+    }, 25);
+
+    const executionProgressEvents: Array<{ phase: string; message: string }> = [];
+    const runSession = vi.fn(async (config: SessionRunConfig) => {
+      if (config.agentType === 'coder') {
+        await mkdir(join(projectDir, 'src'), { recursive: true });
+        const targetName = config.subtaskId === 'subtask-1' ? 'first.ts' : 'second.ts';
+        await writeFile(join(projectDir, 'src', targetName), `export const ${targetName.replace('.ts', '')} = true;\n`);
+      } else if (config.agentType === 'qa_reviewer') {
+        await writeFile(join(specDir, 'qa_report.md'), 'Status: PASSED\n');
+      }
+      return createSessionResult('completed');
+    });
+
+    const orchestrator = new BuildOrchestrator({
+      specDir,
+      projectDir,
+      generatePrompt: vi.fn().mockResolvedValue('prompt'),
+      runSession,
+    });
+
+    orchestrator.on('execution-progress', (progress) => {
+      executionProgressEvents.push({ phase: progress.phase, message: progress.message });
+    });
+
+    const outcome = await orchestrator.run();
+
+    expect(outcome.success).toBe(true);
+    expect(executionProgressEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ phase: 'manual_paused' }),
+        expect.objectContaining({ phase: 'coding' }),
+      ]),
+    );
+  }, 15_000);
 });

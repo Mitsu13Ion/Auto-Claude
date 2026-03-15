@@ -35,6 +35,7 @@ import { safeParseJson } from '../../utils/json-repair';
 import type { SessionResult } from '../session/types';
 import { iterateSubtasks } from './subtask-iterator';
 import type { SubtaskIteratorConfig } from './subtask-iterator';
+import { readHumanPauseData, waitForHumanResume } from './pause-handler';
 
 // =============================================================================
 // Constants
@@ -156,6 +157,14 @@ export interface BuildOrchestratorEvents {
   'build-complete': (outcome: BuildOutcome) => void;
   /** Log message */
   'log': (message: string) => void;
+  /** Execution progress update outside normal phase transitions (for pause/resume checkpoints) */
+  'execution-progress': (progress: {
+    phase: ExecutionPhase;
+    phaseProgress: number;
+    overallProgress: number;
+    currentSubtask?: string;
+    message: string;
+  }) => void;
   /** Error occurred */
   'error': (error: Error, phase: BuildPhase) => void;
 }
@@ -321,6 +330,12 @@ export class BuildOrchestrator extends EventEmitter {
         return { success: false, error: 'Build cancelled' };
       }
 
+      await this.waitForManualPause('planning', {
+        phaseProgress: 0,
+        overallProgress: 10,
+        message: 'Paused before planning session',
+      });
+
       this.iteration++;
       this.emitTyped('iteration-start', this.iteration, 'planning');
 
@@ -442,6 +457,16 @@ export class BuildOrchestrator extends EventEmitter {
       autoContinueDelayMs: AUTO_CONTINUE_DELAY_MS,
       maxIterations: this.config.maxIterations,
       abortSignal: this.config.abortSignal,
+      pauseIfRequested: async ({ currentSubtask }) => {
+        await this.waitForManualPause('coding', {
+          phaseProgress: 50,
+          overallProgress: 50,
+          currentSubtask,
+          message: currentSubtask
+            ? `Paused before continuing subtask ${currentSubtask}`
+            : 'Paused before the next coding session',
+        });
+      },
       onSubtaskStart: (subtask, attempt) => {
         this.iteration++;
         this.emitTyped('iteration-start', this.iteration, 'coding');
@@ -516,6 +541,12 @@ export class BuildOrchestrator extends EventEmitter {
         return { success: false, error: 'Build cancelled' };
       }
 
+      await this.waitForManualPause('qa_review', {
+        phaseProgress: 50,
+        overallProgress: 90,
+        message: 'Paused before QA review',
+      });
+
       this.iteration++;
       this.emitTyped('iteration-start', this.iteration, 'qa_review');
 
@@ -576,6 +607,12 @@ export class BuildOrchestrator extends EventEmitter {
         // (the phase protocol requires qa_review in completedPhases for the transition)
         this.markPhaseCompleted('qa_review');
         this.transitionPhase('qa_fixing', 'Fixing QA issues');
+
+        await this.waitForManualPause('qa_fixing', {
+          phaseProgress: 50,
+          overallProgress: 90,
+          message: 'Paused before QA fixing',
+        });
 
         this.iteration++;
         this.emitTyped('iteration-start', this.iteration, 'qa_fixing');
@@ -845,5 +882,48 @@ export class BuildOrchestrator extends EventEmitter {
     ...args: Parameters<BuildOrchestratorEvents[K]>
   ): void {
     this.emit(event, ...args);
+  }
+
+  private async waitForManualPause(
+    activePhase: Exclude<ExecutionPhase, 'idle' | 'complete' | 'failed' | 'manual_paused' | 'rate_limit_paused' | 'auth_failure_paused'>,
+    progress: {
+      phaseProgress: number;
+      overallProgress: number;
+      currentSubtask?: string;
+      message: string;
+    },
+  ): Promise<void> {
+    const pauseData = readHumanPauseData(this.config.specDir, this.config.sourceSpecDir);
+    if (!pauseData) {
+      return;
+    }
+
+    const pausedPhaseProgress = pauseData.phaseProgress ?? progress.phaseProgress;
+    const pausedOverallProgress = pauseData.overallProgress ?? progress.overallProgress;
+    const pausedSubtask = pauseData.currentSubtask ?? progress.currentSubtask;
+
+    this.emitTyped('log', `Manual pause requested during ${activePhase}`);
+    this.emitTyped('execution-progress', {
+      phase: 'manual_paused',
+      phaseProgress: pausedPhaseProgress,
+      overallProgress: pausedOverallProgress,
+      currentSubtask: pausedSubtask,
+      message: pauseData.message ?? progress.message,
+    });
+
+    await waitForHumanResume(this.config.specDir, this.config.sourceSpecDir, this.config.abortSignal);
+
+    if (this.aborted) {
+      return;
+    }
+
+    this.emitTyped('log', `Resuming ${activePhase} after user pause`);
+    this.emitTyped('execution-progress', {
+      phase: activePhase,
+      phaseProgress: pausedPhaseProgress,
+      overallProgress: pausedOverallProgress,
+      currentSubtask: pausedSubtask,
+      message: `Resuming ${activePhase.replace(/_/g, ' ')} after user pause`,
+    });
   }
 }

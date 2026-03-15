@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useProjectStore } from '../../../stores/project-store';
 import { useSettingsStore } from '../../../stores/settings-store';
-import { checkTaskRunning, isIncompleteHumanReview, getTaskProgress, useTaskStore, loadTasks, hasRecentActivity } from '../../../stores/task-store';
+import { checkTaskRunning, isIncompleteHumanReview, isPausedTask, getTaskProgress, useTaskStore, loadTasks, hasRecentActivity } from '../../../stores/task-store';
 import type { Task, TaskLogs, TaskLogPhase, WorktreeStatus, WorktreeDiff, MergeConflict, MergeStats, GitConflictInfo, ImageAttachment } from '../../../../shared/types';
 
 /**
@@ -108,6 +108,7 @@ export function useTaskDetail({ task }: UseTaskDetailOptions) {
   const needsReview = task.status === 'human_review';
   const executionPhase = task.executionProgress?.phase;
   const hasActiveExecution = executionPhase && executionPhase !== 'idle' && executionPhase !== 'complete' && executionPhase !== 'failed';
+  const isPaused = isPausedTask(task);
   const isIncomplete = isIncompleteHumanReview(task);
   const taskProgress = getTaskProgress(task);
 
@@ -532,6 +533,7 @@ export function useTaskDetail({ task }: UseTaskDetailOptions) {
     isRunning,
     needsReview,
     executionPhase,
+    isPaused,
     hasActiveExecution,
     isIncomplete,
     taskProgress,

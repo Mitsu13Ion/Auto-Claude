@@ -811,6 +811,15 @@ async function runBuildOrchestrator(
     });
   });
 
+  orchestrator.on('execution-progress', (progress) => {
+    postMessage({
+      type: 'execution-progress',
+      taskId: config.taskId,
+      data: progress,
+      projectId: config.projectId,
+    });
+  });
+
   orchestrator.on('session-complete', (_result: SessionResult, phase: string) => {
     // Notify the main process that a session (subtask) completed.
     // This triggers persistPlanPhaseSync → invalidateTasksCache so the frontend
@@ -943,6 +952,15 @@ async function runQALoop(
 
   qaLoop.on('log', (message: string) => {
     postLog(message);
+  });
+
+  qaLoop.on('execution-progress', (progress) => {
+    postMessage({
+      type: 'execution-progress',
+      taskId: config.taskId,
+      data: progress,
+      projectId: config.projectId,
+    });
   });
 
   // Start QA validation phase logging at the loop level
@@ -1096,6 +1114,15 @@ async function runSpecOrchestrator(
 
   orchestrator.on('log', (message: string) => {
     postLog(message);
+  });
+
+  orchestrator.on('execution-progress', (progress) => {
+    postMessage({
+      type: 'execution-progress',
+      taskId: config.taskId,
+      data: progress,
+      projectId: config.projectId,
+    });
   });
 
   orchestrator.on('error', (error: Error, phase: SpecPhase) => {
