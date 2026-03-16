@@ -395,6 +395,41 @@ describe('QALoop', () => {
     );
   });
 
+  it('does not crash when a QA issue is missing title', async () => {
+    const repeatedPlanWithoutTitle = JSON.stringify({
+      phases: [{ subtasks: [{ status: 'completed' }] }],
+      qa_signoff: {
+        status: 'rejected',
+        issues_found: [
+          {
+            description: 'Validation command still fails in CI',
+            type: 'critical',
+            location: 'ci/validate.yml',
+            fix_required: 'Restore validation workflow',
+          },
+        ],
+      },
+    });
+
+    let planReadCount = 0;
+    mockReadFile.mockImplementation((path: string) => {
+      if (path.endsWith('implementation_plan.json')) {
+        planReadCount++;
+        if (planReadCount === 1) return Promise.resolve(completedPlan());
+        return Promise.resolve(repeatedPlanWithoutTitle);
+      }
+      return Promise.reject(new Error('ENOENT'));
+    });
+
+    const runSession = vi.fn(async () => makeSessionResult('completed'));
+    const config = makeConfig({ runSession, maxIterations: 5 });
+    const loop = new QALoop(config);
+    const outcome = await loop.run();
+
+    expect(outcome.approved).toBe(false);
+    expect(outcome.reason).toBe('no_progress');
+  });
+
   // -------------------------------------------------------------------------
   // Cancellation via AbortSignal
   // -------------------------------------------------------------------------

@@ -175,6 +175,12 @@ interface QASignoff {
   issues_found?: QAIssue[];
 }
 
+function issueTitle(issue: QAIssue): string {
+  const rawTitle = issue.title ?? issue.description ?? 'Untitled QA issue';
+  const normalized = rawTitle.trim();
+  return normalized || 'Untitled QA issue';
+}
+
 // =============================================================================
 // QALoop
 // =============================================================================
@@ -554,14 +560,14 @@ export class QALoop extends EventEmitter {
     const titleCounts = new Map<string, number>();
     for (const record of this.iterationHistory) {
       for (const issue of record.issues) {
-        const title = issue.title.toLowerCase().trim();
+        const title = issueTitle(issue).toLowerCase();
         titleCounts.set(title, (titleCounts.get(title) ?? 0) + 1);
       }
     }
 
     // Check if any current issue exceeds threshold
     for (const issue of currentIssues) {
-      const title = issue.title.toLowerCase().trim();
+      const title = issueTitle(issue).toLowerCase();
       const count = (titleCounts.get(title) ?? 0) + 1; // +1 for current occurrence
       if (count >= RECURRING_ISSUE_THRESHOLD) {
         return true;
@@ -628,13 +634,13 @@ export class QALoop extends EventEmitter {
 
     for (const record of this.iterationHistory) {
       for (const issue of record.issues) {
-        const key = issue.title.toLowerCase().trim();
+        const key = issueTitle(issue).toLowerCase();
         titleCounts.set(key, (titleCounts.get(key) ?? 0) + 1);
       }
     }
 
     for (const issue of currentIssues) {
-      const key = issue.title.toLowerCase().trim();
+      const key = issueTitle(issue).toLowerCase();
       const count = (titleCounts.get(key) ?? 0) + 1;
       if (count >= RECURRING_ISSUE_THRESHOLD) {
         recurring.push(issue);
@@ -648,7 +654,7 @@ export class QALoop extends EventEmitter {
     return issues
       .map((issue) => ({
         type: issue.type ?? 'warning',
-        title: issue.title.trim().toLowerCase(),
+        title: issueTitle(issue).toLowerCase(),
         description: issue.description?.trim().toLowerCase() ?? '',
         location: issue.location?.trim().toLowerCase() ?? '',
         fix_required: issue.fix_required?.trim().toLowerCase() ?? '',

@@ -49,15 +49,23 @@ function normalizeQAStatus(value: unknown): string {
 
 function coerceIssue(input: unknown): unknown {
   if (typeof input === 'string') {
-    return { description: input };
+    return { title: input, description: input };
   }
   if (!input || typeof input !== 'object') return input;
   const raw = input as Record<string, unknown>;
+  const description = raw.description ?? raw.message ?? raw.text ?? raw.detail ?? raw.title ?? '';
+  const fallbackTitle =
+    raw.title
+    ?? raw.summary
+    ?? raw.name
+    ?? (typeof description === 'string' && description.trim() ? description : 'Untitled QA issue');
 
   return {
     ...raw,
     // Coerce description: accept message, text, detail as aliases
-    description: raw.description ?? raw.message ?? raw.text ?? raw.detail ?? raw.title ?? '',
+    description,
+    // Coerce title: accept summary/name and fall back to description if omitted
+    title: fallbackTitle,
     // Coerce type: accept severity, level as aliases
     type: raw.type ?? raw.severity ?? raw.level ?? undefined,
   };
@@ -66,7 +74,7 @@ function coerceIssue(input: unknown): unknown {
 export const QAIssueSchema = z.preprocess(coerceIssue, z.object({
   description: z.string(),
   type: z.string().optional(),
-  title: z.string().optional(),
+  title: z.string().default('Untitled QA issue'),
   location: z.string().optional(),
   fix_required: z.string().optional(),
 }).passthrough());
