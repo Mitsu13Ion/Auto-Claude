@@ -457,6 +457,8 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
     IPC_CHANNELS.TASK_RESET,
     async (_, taskId: string): Promise<IPCResult<{ projectId: string }>> => {
       const { rm, readdir, mkdir } = await import('fs/promises');
+      const preservedFiles = new Map<string, string>();
+      const taskMetadataFile = 'task_metadata.json';
 
       const { task, project } = findTaskAndProject(taskId);
 
@@ -486,11 +488,40 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
       let specContent: string;
       try {
         specContent = readFileSync(specFilePath, 'utf-8');
+        preservedFiles.set(AUTO_BUILD_PATHS.SPEC_FILE, specContent);
       } catch (error) {
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Failed to read spec.md before reset'
         };
+      }
+
+      const metadataCandidates = [
+        path.join(mainSpecDir, taskMetadataFile),
+        ...specPaths.map((specDir) => path.join(specDir, taskMetadataFile))
+      ];
+      const metadataFilePath = metadataCandidates.find((candidate, index) =>
+        metadataCandidates.indexOf(candidate) === index && existsSync(candidate)
+      );
+
+      if (metadataFilePath) {
+        try {
+          const rawMetadata = readFileSync(metadataFilePath, 'utf-8');
+          try {
+            const parsedMetadata = JSON.parse(rawMetadata) as Record<string, unknown>;
+            delete parsedMetadata.prUrl;
+            delete parsedMetadata.archivedAt;
+            delete parsedMetadata.archivedInVersion;
+            preservedFiles.set(taskMetadataFile, JSON.stringify(parsedMetadata, null, 2));
+          } catch {
+            preservedFiles.set(taskMetadataFile, rawMetadata);
+          }
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to read task metadata before reset'
+          };
+        }
       }
 
       const worktreePath = findTaskWorktree(project.path, task.specId);
@@ -540,7 +571,9 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
         for (const entry of entries) {
           await rm(path.join(mainSpecDir, entry.name), { recursive: true, force: true });
         }
-        writeFileAtomicSync(path.join(mainSpecDir, AUTO_BUILD_PATHS.SPEC_FILE), specContent);
+        for (const [fileName, fileContent] of preservedFiles) {
+          writeFileAtomicSync(path.join(mainSpecDir, fileName), fileContent);
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
         errors.push(`main spec dir: ${message}`);

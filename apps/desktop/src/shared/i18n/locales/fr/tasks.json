@@ -202,12 +202,12 @@
     "backgroundTaskTitle": "La tâche continue en arrière-plan",
     "backgroundTaskDescription": "La tâche est toujours en cours. Vous pouvez rouvrir cette boîte de dialogue pour suivre la progression.",
     "taskResetTitle": "Tâche réinitialisée",
-    "taskResetDescription": "La tâche a été remise à zéro en conservant uniquement la spécification."
+    "taskResetDescription": "La tâche a été remise à zéro en conservant la spécification et les métadonnées de liaison."
   },
   "resetDialog": {
     "title": "Réinitialiser la tâche",
     "confirmMessage": "Voulez-vous réinitialiser",
-    "keepSpecWarning": "La spécification `spec.md` sera conservée, mais le plan d'implémentation, les logs, les fichiers QA, le contexte généré et le worktree seront supprimés.",
+    "keepSpecWarning": "La spécification `spec.md` et les métadonnées de tâche seront conservées, mais le plan d'implémentation, les logs, les fichiers QA, le contexte généré et le worktree seront supprimés.",
     "destructiveWarning": "Cette action remet la tâche à zéro et annule tout travail généré qui n'a pas été fusionné.",
     "cancel": "Annuler",
     "resetTask": "Réinitialiser la tâche",

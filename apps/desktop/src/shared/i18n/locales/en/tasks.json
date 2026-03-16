@@ -202,12 +202,12 @@
     "backgroundTaskTitle": "Task continues in background",
     "backgroundTaskDescription": "The task is still running. You can reopen this dialog to monitor progress.",
     "taskResetTitle": "Task reset",
-    "taskResetDescription": "The task was reset while preserving only the specification."
+    "taskResetDescription": "The task was reset while preserving the specification and task linkage metadata."
   },
   "resetDialog": {
     "title": "Reset Task",
     "confirmMessage": "Do you want to reset",
-    "keepSpecWarning": "The `spec.md` file will be preserved, but the implementation plan, logs, QA files, generated context, and worktree will be removed.",
+    "keepSpecWarning": "The `spec.md` file and task metadata will be preserved, but the implementation plan, logs, QA files, generated context, and worktree will be removed.",
     "destructiveWarning": "This resets the task to zero and discards any generated work that has not been merged.",
     "cancel": "Cancel",
     "resetTask": "Reset Task",
