@@ -151,12 +151,12 @@ export function GitLabIntegration({
     setBranchesError(null);
 
     try {
-      debugLog('fetchBranches: Calling getGitBranches...');
-      const result = await window.electronAPI.getGitBranches(projectPath);
-      debugLog('fetchBranches: getGitBranches result:', { success: result.success, dataType: typeof result.data, dataLength: Array.isArray(result.data) ? result.data.length : 'N/A', error: result.error });
+      debugLog('fetchBranches: Calling getGitBranchesWithInfo...');
+      const result = await window.electronAPI.getGitBranchesWithInfo(projectPath);
+      debugLog('fetchBranches: getGitBranchesWithInfo result:', { success: result.success, dataType: typeof result.data, dataLength: Array.isArray(result.data) ? result.data.length : 'N/A', error: result.error });
 
       if (result.success && result.data) {
-        setBranches(result.data);
+        setBranches(result.data.map((branch) => branch.name));
         debugLog('fetchBranches: Loaded branches:', result.data.length);
 
         // Auto-detect default branch if not set in project settings

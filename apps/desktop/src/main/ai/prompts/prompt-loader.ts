@@ -200,16 +200,6 @@ export function compactProjectInstructions(content: string): string {
   ].join('\n');
 }
 
-/** @deprecated Use loadProjectInstructions() instead */
-export async function loadClaudeMd(projectDir: string): Promise<string | null> {
-  return tryReadFile(join(projectDir, 'CLAUDE.md'));
-}
-
-/** @deprecated Use loadProjectInstructions() instead */
-export async function loadAgentsMd(projectDir: string): Promise<string | null> {
-  return tryReadFile(join(projectDir, 'agents.md'));
-}
-
 // =============================================================================
 // Context Injection
 // =============================================================================

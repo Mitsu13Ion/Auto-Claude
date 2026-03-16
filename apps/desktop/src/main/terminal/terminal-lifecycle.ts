@@ -26,8 +26,7 @@ import { getClaudeCodeEnv } from '../claude-code-settings';
 export interface RestoreOptions {
   resumeClaudeSession: boolean;
   captureSessionId: (terminalId: string, projectPath: string, startTime: number) => void;
-  /** Callback triggered when a Claude session needs to be resumed.
-   * Note: sessionId is deprecated and ignored - resumeClaude uses --continue */
+  /** Callback triggered when a Claude session needs to be resumed. */
   onResumeNeeded?: (terminalId: string, sessionId: string | undefined) => void;
 }
 

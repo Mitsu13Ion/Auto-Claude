@@ -27,62 +27,6 @@ import type { BrowserWindow } from 'electron';
 // ============================================
 
 /**
- * Get list of git branches for a directory (both local and remote)
- */
-function getGitBranches(projectPath: string): string[] {
-  try {
-    // First fetch to ensure we have latest remote refs
-    try {
-      execFileSync(getToolPath('git'), ['fetch', '--prune'], {
-        cwd: projectPath,
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: 10000 // 10 second timeout for fetch
-      });
-    } catch {
-      // Fetch may fail if offline or no remote, continue with local refs
-    }
-
-    // Get all branches (local + remote) using --all flag
-    const result = execFileSync(getToolPath('git'), ['branch', '--all', '--format=%(refname:short)'], {
-      cwd: projectPath,
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    const branches = result.trim().split('\n')
-      .filter(b => b.trim())
-      .map(b => {
-        // Remote branches come as "origin/branch-name", keep the full name
-        // but remove the "origin/" prefix for display while keeping it usable
-        return b.trim();
-      })
-      // Remove HEAD pointer entries like "origin/HEAD"
-      .filter(b => !b.endsWith('/HEAD'))
-      // Remove duplicates (local branch may exist alongside remote)
-      .filter((branch, index, self) => {
-        // If it's a remote branch (origin/x) and local version exists, keep local
-        if (branch.startsWith('origin/')) {
-          const localName = branch.replace('origin/', '');
-          return !self.includes(localName);
-        }
-        return self.indexOf(branch) === index;
-      });
-
-    // Sort: local branches first, then remote branches
-    return branches.sort((a, b) => {
-      const aIsRemote = a.startsWith('origin/');
-      const bIsRemote = b.startsWith('origin/');
-      if (aIsRemote && !bIsRemote) return 1;
-      if (!aIsRemote && bIsRemote) return -1;
-      return a.localeCompare(b);
-    });
-  } catch {
-    return [];
-  }
-}
-
-/**
  * Get structured branch information for a directory (both local and remote)
  * Returns GitBranchDetail[] with type indicators, keeping both local and remote versions
  * when a branch exists in both places (no deduplication)
@@ -201,8 +145,10 @@ function getCurrentGitBranch(projectPath: string): string | null {
  * Checks for common main branch names in order of preference
  */
 function detectMainBranch(projectPath: string): string | null {
-  const branches = getGitBranches(projectPath);
-  if (branches.length === 0) return null;
+  const branches = getGitBranchesWithInfo(projectPath).map((branch) => branch.name);
+  if (branches.length === 0) {
+    return null;
+  }
 
   // Check for common main branch names in order of preference
   const mainBranchCandidates = ['main', 'master', 'develop', 'dev', 'trunk'];
@@ -444,25 +390,6 @@ export function registerProjectHandlers(
   // ============================================
   // Git Operations
   // ============================================
-
-  // Get all branches for a project (legacy - returns string[])
-  ipcMain.handle(
-    IPC_CHANNELS.GIT_GET_BRANCHES,
-    async (_, projectPath: string): Promise<IPCResult<string[]>> => {
-      try {
-        if (!existsSync(projectPath)) {
-          return { success: false, error: 'Directory does not exist' };
-        }
-        const branches = getGitBranches(projectPath);
-        return { success: true, data: branches };
-      } catch (error) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error'
-        };
-      }
-    }
-  );
 
   // Get all branches with structured type information (local vs remote)
   ipcMain.handle(

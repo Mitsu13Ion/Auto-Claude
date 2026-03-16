@@ -834,8 +834,6 @@ export interface ElectronAPI {
   readFile: (filePath: string) => Promise<IPCResult<string>>;
 
   // Git operations
-  /** @deprecated Will return GitBranchDetail[] in future - see getGitBranchesWithInfo */
-  getGitBranches: (projectPath: string) => Promise<IPCResult<string[]>>;
   /** Get branches with structured type information (local vs remote) */
   getGitBranchesWithInfo: (projectPath: string) => Promise<IPCResult<GitBranchDetail[]>>;
   getCurrentGitBranch: (projectPath: string) => Promise<IPCResult<string | null>>;

@@ -230,7 +230,6 @@ export interface AgentProfile {
   // Per-phase configuration - all profiles now have this
   phaseModels?: PhaseModelConfig;
   phaseThinking?: PhaseThinkingConfig;
-  /** @deprecated Use phaseModels and phaseThinking for per-phase configuration. Will be removed in v3.0. */
   isAutoProfile?: boolean;
 }
 
@@ -364,4 +363,3 @@ export interface AppSettings {
 
 // GPU acceleration mode for terminal WebGL rendering
 export type GpuAcceleration = 'auto' | 'on' | 'off';
-

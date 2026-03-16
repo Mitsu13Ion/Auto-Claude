@@ -87,11 +87,6 @@ export const projectMock = {
   }),
 
   // Git operations
-  getGitBranches: async () => ({
-    success: true,
-    data: ['main', 'develop', 'feature/test']
-  }),
-
   getGitBranchesWithInfo: async () => ({
     success: true,
     data: [

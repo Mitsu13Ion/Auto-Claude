@@ -144,15 +144,13 @@ export function getRequiredMcpServers(
     projectCapabilities?: ProjectCapabilities;
     linearEnabled?: boolean;
     memoryEnabled?: boolean;
-    /** @deprecated Use memoryEnabled instead */
-    graphitiEnabled?: boolean;
     mcpConfig?: McpConfig;
   } = {},
 ): string[] {
   const {
     projectCapabilities,
     linearEnabled = false,
-    memoryEnabled = options.graphitiEnabled ?? false,
+    memoryEnabled = false,
     mcpConfig = {},
   } = options;
 

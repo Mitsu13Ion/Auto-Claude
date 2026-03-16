@@ -107,9 +107,6 @@ export function isMemoryEnabled(projectEnvVars: EnvironmentVars): boolean {
   );
 }
 
-/** @deprecated Use isMemoryEnabled instead */
-export const isGraphitiEnabled = isMemoryEnabled;
-
 /**
  * Check if OpenAI API key is available
  * Priority: project .env > global settings > process.env

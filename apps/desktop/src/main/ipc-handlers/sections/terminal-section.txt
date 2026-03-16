@@ -33,7 +33,9 @@
   ipcMain.on(
     IPC_CHANNELS.TERMINAL_INVOKE_CLAUDE,
     (_, id: string, cwd?: string) => {
-      terminalManager.invokeClaude(id, cwd);
+      terminalManager.invokeCLIAsync(id, cwd).catch((error) => {
+        console.warn('[terminal-handlers] Failed to invoke Claude:', error);
+      });
     }
   );
 
@@ -429,7 +431,9 @@
   ipcMain.on(
     IPC_CHANNELS.TERMINAL_RESUME_CLAUDE,
     (_, id: string, sessionId?: string) => {
-      terminalManager.resumeClaude(id, sessionId);
+      terminalManager.resumeClaudeAsync(id, sessionId).catch((error) => {
+        console.warn('[terminal-handlers] Failed to resume Claude:', error);
+      });
     }
   );
 

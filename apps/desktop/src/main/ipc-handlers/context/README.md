@@ -16,7 +16,7 @@ Shared utility functions for environment configuration and parsing.
 - `parseEnvFile(content)` - Parse .env file content into key-value pairs
 - `loadProjectEnvVars(projectPath, autoBuildPath)` - Load project-specific environment variables
 - `loadGlobalSettings()` - Load global application settings
-- `isGraphitiEnabled(projectEnvVars)` - Check if Graphiti memory system is enabled
+- `isMemoryEnabled(projectEnvVars)` - Check if Graphiti memory system is enabled
 - `hasOpenAIKey(projectEnvVars, globalSettings)` - Check if OpenAI API key is available
 - `getGraphitiConnectionDetails(projectEnvVars)` - Get LadybugDB connection configuration
 
@@ -123,7 +123,7 @@ Each module can be tested independently:
 
 ```typescript
 // Example: Testing utility functions
-import { parseEnvFile, isGraphitiEnabled } from './utils';
+import { parseEnvFile, isMemoryEnabled } from './utils';
 
 test('parseEnvFile handles quotes correctly', () => {
   const content = 'API_KEY="test-key"\nDEBUG=true';

@@ -19,17 +19,17 @@ export type Platform = 'windows' | 'macos' | 'linux' | 'unknown';
 
 /**
  * Get the current platform string at runtime.
- * Uses navigator.userAgentData.platform if available (modern, non-deprecated),
- * otherwise falls back to navigator.platform (deprecated but widely supported).
+ * Uses navigator.userAgentData.platform if available (modern),
+ * otherwise falls back to navigator.platform (legacy but still widely supported).
  *
  * @returns Platform string in lowercase
  */
 export function getPlatform(): string {
-  // Prefer navigator.userAgentData.platform (modern, non-deprecated)
+  // Prefer navigator.userAgentData.platform when available.
   if (navigator.userAgentData?.platform) {
     return navigator.userAgentData.platform.toLowerCase();
   }
-  // Fallback to navigator.platform (deprecated but widely supported)
+  // Fallback to navigator.platform for older engines.
   // Use empty string fallback for environments where navigator.platform is undefined
   return (navigator.platform ?? '').toLowerCase();
 }

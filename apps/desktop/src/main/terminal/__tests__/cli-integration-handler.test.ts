@@ -470,7 +470,7 @@ describe('cli-integration-handler', () => {
       expect(mockPersistSession).toHaveBeenCalledWith(terminal);
     });
 
-    it('uses --continue regardless of sessionId (sessionId is deprecated)', async () => {
+  it('uses --continue regardless of sessionId', async () => {
       mockGetClaudeCliInvocation.mockReturnValue({
         command: '/opt/claude/bin/claude',
         env: { PATH: '/opt/claude/bin:/usr/bin' },

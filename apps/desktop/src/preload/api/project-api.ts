@@ -84,8 +84,6 @@ export interface ProjectAPI {
    }) => void) => () => void;
 
    // Git Operations
-  /** @deprecated Use getGitBranchesWithInfo for structured branch data with type indicators */
-  getGitBranches: (projectPath: string) => Promise<IPCResult<string[]>>;
   /** Get branches with structured type information (local vs remote) */
   getGitBranchesWithInfo: (projectPath: string) => Promise<IPCResult<GitBranchDetail[]>>;
   getCurrentGitBranch: (projectPath: string) => Promise<IPCResult<string | null>>;
@@ -249,9 +247,6 @@ export const createProjectAPI = (): ProjectAPI => ({
   },
 
   // Git Operations
-  getGitBranches: (projectPath: string): Promise<IPCResult<string[]>> =>
-    ipcRenderer.invoke(IPC_CHANNELS.GIT_GET_BRANCHES, projectPath),
-
   getGitBranchesWithInfo: (projectPath: string): Promise<IPCResult<GitBranchDetail[]>> =>
     ipcRenderer.invoke(IPC_CHANNELS.GIT_GET_BRANCHES_WITH_INFO, projectPath),
 

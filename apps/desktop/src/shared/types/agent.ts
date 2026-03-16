@@ -164,7 +164,7 @@ export interface ClaudeProfile {
   tokenCreatedAt?: Date;
   /**
    * Path to the Claude config directory (e.g., ~/.claude or ~/.claude-profiles/work)
-   * @deprecated Use oauthToken instead for reliable multi-profile switching
+   * Used for config-dir based authentication and Claude CLI environment setup.
    */
   configDir?: string;
   /** Whether this is the default profile (uses ~/.claude) */

@@ -196,7 +196,7 @@ describe('AgentProcessManager - API Profile Env Injection (Story 2.3)', () => {
       await processManager.spawnProcess('task-1', '/fake/cwd', ['run.py'], {}, 'task-execution');
 
       expect(spawnCalls).toHaveLength(1);
-      // spawnProcess uses args[0] as command (deprecated — Python subprocess removed)
+      // spawnProcess uses args[0] as command (legacy wrapper over worker spawning)
       expect(spawnCalls[0].command).toBe('run.py');
       expect(spawnCalls[0].options.env).toMatchObject({
         ANTHROPIC_BASE_URL: 'https://custom.api.com',

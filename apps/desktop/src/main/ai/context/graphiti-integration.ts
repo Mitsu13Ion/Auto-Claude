@@ -16,9 +16,6 @@ export function isMemoryEnabled(): boolean {
   return false;
 }
 
-/** @deprecated Use isMemoryEnabled instead */
-export const isGraphitiEnabled = isMemoryEnabled;
-
 /**
  * Fetch historical hints for a query from the memory knowledge graph.
  *

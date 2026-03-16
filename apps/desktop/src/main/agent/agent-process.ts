@@ -556,8 +556,8 @@ export class AgentProcessManager {
   }
 
   /**
-   * @deprecated Python process spawning removed — use spawnWorkerProcess instead.
-   * Kept as a stub to avoid breaking test files that call this method.
+   * Legacy test helper that delegates to the worker-process path.
+   * Production callers should use spawnWorkerProcess.
    */
   async spawnProcess(
     taskId: string,

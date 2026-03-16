@@ -1271,9 +1271,8 @@ export function resumeClaude(
     // and we don't want stale IDs persisting through SessionHandler.persistSession().
     terminal.claudeSessionId = undefined;
 
-    // Deprecation warning for callers still passing sessionId
     if (_sessionId) {
-      console.warn('[ClaudeIntegration:resumeClaude] sessionId parameter is deprecated and ignored; using claude --continue instead');
+      debugLog('[ClaudeIntegration:resumeClaude] Ignoring sessionId parameter; resume uses claude --continue');
     }
 
     // Preserve YOLO mode flag from terminal's stored state
@@ -1506,9 +1505,9 @@ export async function resumeClaudeAsync(
     // and we don't want stale IDs persisting through SessionHandler.persistSessionAsync().
     terminal.claudeSessionId = undefined;
 
-    // Deprecation warning for callers still passing sessionId (skip for migrated sessions)
+    // Ignore the historical sessionId parameter; resume now always uses --continue.
     if (sessionId && !options?.migratedSession) {
-      console.warn('[ClaudeIntegration:resumeClaudeAsync] sessionId parameter is deprecated and ignored; using claude --continue instead');
+      debugLog('[ClaudeIntegration:resumeClaudeAsync] Ignoring sessionId parameter; resume uses claude --continue');
     }
 
     if (options?.migratedSession) {

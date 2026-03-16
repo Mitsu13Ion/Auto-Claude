@@ -518,7 +518,6 @@ export const IPC_CHANNELS = {
   FILE_EXPLORER_READ: 'fileExplorer:read',
 
   // Git operations
-  GIT_GET_BRANCHES: 'git:getBranches',
   GIT_GET_BRANCHES_WITH_INFO: 'git:getBranchesWithInfo',
   GIT_GET_CURRENT_BRANCH: 'git:getCurrentBranch',
   GIT_DETECT_MAIN_BRANCH: 'git:detectMainBranch',

@@ -100,9 +100,9 @@ export function IntegrationSettings({
   const loadBranches = useCallback(async () => {
     setIsLoadingBranches(true);
     try {
-      const result = await window.electronAPI.getGitBranches(project.path);
+      const result = await window.electronAPI.getGitBranchesWithInfo(project.path);
       if (result.success && result.data) {
-        setBranches(result.data);
+        setBranches(result.data.map((branch) => branch.name));
         // Auto-detect main branch if not set and not already detected
         // Use mainBranchRef to avoid stale closure issues
         if (!mainBranchRef.current && !hasDetectedMainBranch.current) {

@@ -245,7 +245,7 @@ describe('Claude Profile IPC Integration', () => {
   });
 
   // Note: CLAUDE_PROFILE_INITIALIZE tests were removed.
-  // The handler was deprecated as part of the migration from setup-token to the
+  // The handler was retired as part of the migration from setup-token to the
   // new /login OAuth flow. Profile initialization now happens automatically
   // during the /login flow in claude-code-handlers.ts.
 

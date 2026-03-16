@@ -137,25 +137,6 @@ export function getValidator(
 }
 
 // ---------------------------------------------------------------------------
-// Backward-compat shim
-// ---------------------------------------------------------------------------
-
-/**
- * @deprecated Use isCommandBlocked() instead. Kept for backward compatibility
- * with any external tooling that still calls isCommandAllowed().
- *
- * In the new denylist model the profile argument is ignored.
- * Returns [true, ''] when the command is allowed (not in denylist).
- * Returns [false, reason] when the command is in the denylist.
- */
-export function isCommandAllowed(
-  command: string,
-  _profile?: SecurityProfile,
-): ValidationResult {
-  return isCommandBlocked(command);
-}
-
-// ---------------------------------------------------------------------------
 // Main security hook
 // ---------------------------------------------------------------------------
 
