@@ -18,6 +18,8 @@
     "retryTask": "Relancer la tâche",
     "recover": "Récupérer",
     "resume": "Reprendre",
+    "reset": "Réinitialiser",
+    "resetTask": "Réinitialiser la tâche",
     "archive": "Archiver",
     "delete": "Supprimer",
     "view": "Voir les détails",
@@ -198,7 +200,19 @@
   },
   "notifications": {
     "backgroundTaskTitle": "La tâche continue en arrière-plan",
-    "backgroundTaskDescription": "La tâche est toujours en cours. Vous pouvez rouvrir cette boîte de dialogue pour suivre la progression."
+    "backgroundTaskDescription": "La tâche est toujours en cours. Vous pouvez rouvrir cette boîte de dialogue pour suivre la progression.",
+    "taskResetTitle": "Tâche réinitialisée",
+    "taskResetDescription": "La tâche a été remise à zéro en conservant uniquement la spécification."
+  },
+  "resetDialog": {
+    "title": "Réinitialiser la tâche",
+    "confirmMessage": "Voulez-vous réinitialiser",
+    "keepSpecWarning": "La spécification `spec.md` sera conservée, mais le plan d'implémentation, les logs, les fichiers QA, le contexte généré et le worktree seront supprimés.",
+    "destructiveWarning": "Cette action remet la tâche à zéro et annule tout travail généré qui n'a pas été fusionné.",
+    "cancel": "Annuler",
+    "resetTask": "Réinitialiser la tâche",
+    "resetting": "Réinitialisation...",
+    "resetFailed": "La réinitialisation de la tâche a échoué."
   },
   "wizard": {
     "createTitle": "Créer une nouvelle tâche",

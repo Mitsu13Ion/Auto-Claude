@@ -198,6 +198,7 @@ export interface ElectronAPI {
   getTasks: (projectId: string, options?: { forceRefresh?: boolean }) => Promise<IPCResult<Task[]>>;
   createTask: (projectId: string, title: string, description: string, metadata?: TaskMetadata) => Promise<IPCResult<Task>>;
   deleteTask: (taskId: string) => Promise<IPCResult>;
+  resetTask: (taskId: string) => Promise<IPCResult<{ projectId: string }>>;
   updateTask: (taskId: string, updates: { title?: string; description?: string }) => Promise<IPCResult<Task>>;
   startTask: (taskId: string, options?: TaskStartOptions) => void;
   pauseTask: (taskId: string) => Promise<IPCResult>;

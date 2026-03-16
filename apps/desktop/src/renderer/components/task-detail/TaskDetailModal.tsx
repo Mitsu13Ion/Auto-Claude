@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { useToast } from '../../hooks/use-toast';
@@ -33,7 +34,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { calculateProgress } from '../../lib/utils';
-import { stopTask, pauseTask, resumeTask, submitReview, recoverStuckTask, deleteTask, useTaskStore, startTaskOrQueue, isRetryableErrorTask } from '../../stores/task-store';
+import { stopTask, pauseTask, resumeTask, submitReview, recoverStuckTask, deleteTask, resetTask, useTaskStore, startTaskOrQueue, isRetryableErrorTask } from '../../stores/task-store';
 import { useProjectStore } from '../../stores/project-store';
 import { TASK_STATUS_LABELS } from '../../../shared/constants';
 import { TaskEditDialog } from '../TaskEditDialog';
@@ -83,6 +84,9 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
   const { toast } = useToast();
   const state = useTaskDetail({ task });
   const activeProject = useProjectStore(s => s.getActiveProject());
+  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
   const showFilesTab = isFilesTabEnabled();
   const progressPercent = calculateProgress(task.subtasks);
   const completedSubtasks = task.subtasks.filter(s => s.status === 'completed').length;
@@ -174,6 +178,22 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
       state.setDeleteError(result.error || 'Failed to delete task');
     }
     state.setIsDeleting(false);
+  };
+
+  const handleReset = async () => {
+    setIsResetting(true);
+    setResetError(null);
+    const result = await resetTask(task.id);
+    if (result.success) {
+      setShowResetDialog(false);
+      toast({
+        title: t('tasks:notifications.taskResetTitle'),
+        description: t('tasks:notifications.taskResetDescription'),
+      });
+    } else {
+      setResetError(result.error || t('tasks:resetDialog.resetFailed'));
+    }
+    setIsResetting(false);
   };
 
   const handleMerge = async () => {
@@ -637,6 +657,19 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
               <Button
                 variant="ghost"
                 size="sm"
+                className="text-muted-foreground hover:text-warning hover:bg-warning/10"
+                onClick={() => {
+                  setResetError(null);
+                  setShowResetDialog(true);
+                }}
+                disabled={state.isRunning && !state.isStuck}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                {t('tasks:actions.resetTask')}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                 onClick={() => state.setShowDeleteDialog(true)}
                 disabled={state.isRunning && !state.isStuck}
@@ -727,6 +760,58 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                 <>
                   <Trash2 className="mr-2 h-4 w-4" />
                   {t('tasks:deleteDialog.deletePermanently')}
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showResetDialog} onOpenChange={setShowResetDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <RotateCcw className="h-5 w-5 text-warning" />
+              {t('tasks:resetDialog.title')}
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="text-sm text-muted-foreground space-y-3">
+                <p>
+                  {t('tasks:resetDialog.confirmMessage')} <strong className="text-foreground">"{task.title}"</strong>?
+                </p>
+                <p>
+                  {t('tasks:resetDialog.keepSpecWarning')}
+                </p>
+                <p className="text-warning">
+                  {t('tasks:resetDialog.destructiveWarning')}
+                </p>
+                {resetError && (
+                  <p className="text-destructive bg-destructive/10 px-3 py-2 rounded-lg text-sm">
+                    {resetError}
+                  </p>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isResetting}>{t('tasks:resetDialog.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleReset();
+              }}
+              disabled={isResetting}
+              className="bg-warning text-warning-foreground hover:bg-warning/90"
+            >
+              {isResetting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {t('tasks:resetDialog.resetting')}
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  {t('tasks:resetDialog.resetTask')}
                 </>
               )}
             </AlertDialogAction>

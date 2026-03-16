@@ -16,6 +16,9 @@ import { getToolPath } from '../../cli-tool-manager';
 import { getIsolatedGitEnv } from '../../utils/git-isolation';
 import { taskStateManager } from '../../task-state-manager';
 import { safeBreadcrumb } from '../../sentry';
+import { writeFileAtomicSync } from '../../utils/atomic-file';
+import { fileWatcher } from '../../file-watcher';
+import { cancelFallbackTimer } from '../agent-events-handlers';
 
 /**
  * Sanitize thinking levels in task metadata in-place.
@@ -441,6 +444,126 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
       }
 
       return { success: true };
+    }
+  );
+
+  /**
+   * Reset a task while preserving only spec.md.
+   *
+   * The reset removes generated artifacts, logs, QA outputs, context files,
+   * and any associated worktree so the task can start again from its spec.
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.TASK_RESET,
+    async (_, taskId: string): Promise<IPCResult<{ projectId: string }>> => {
+      const { rm, readdir, mkdir } = await import('fs/promises');
+
+      const { task, project } = findTaskAndProject(taskId);
+
+      if (!task || !project) {
+        return { success: false, error: 'Task or project not found' };
+      }
+
+      if (agentManager.isRunning(taskId)) {
+        return { success: false, error: 'Cannot reset a running task. Stop the task first.' };
+      }
+
+      const specsBaseDir = getSpecsDir(project.autoBuildPath);
+      const mainSpecDir = path.join(project.path, specsBaseDir, task.specId);
+      const specPaths = findAllSpecPaths(project.path, specsBaseDir, task.specId);
+      const candidateSpecFiles = [
+        path.join(mainSpecDir, AUTO_BUILD_PATHS.SPEC_FILE),
+        ...specPaths.map((specDir) => path.join(specDir, AUTO_BUILD_PATHS.SPEC_FILE))
+      ];
+      const specFilePath = candidateSpecFiles.find((candidate, index) =>
+        candidateSpecFiles.indexOf(candidate) === index && existsSync(candidate)
+      );
+
+      if (!specFilePath) {
+        return { success: false, error: 'Cannot reset task: spec.md was not found.' };
+      }
+
+      let specContent: string;
+      try {
+        specContent = readFileSync(specFilePath, 'utf-8');
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to read spec.md before reset'
+        };
+      }
+
+      const worktreePath = findTaskWorktree(project.path, task.specId);
+      if (worktreePath) {
+        const cleanupResult = await cleanupWorktree({
+          worktreePath,
+          projectPath: project.path,
+          specId: task.specId,
+          logPrefix: '[TASK_RESET]',
+          deleteBranch: true
+        });
+
+        if (!cleanupResult.success) {
+          return {
+            success: false,
+            error: `Failed to reset worktree: ${cleanupResult.warnings.join('; ') || 'Unknown error'}`
+          };
+        }
+      }
+
+      const errors: string[] = [];
+
+      try {
+        await mkdir(mainSpecDir, { recursive: true });
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to prepare task directory for reset'
+        };
+      }
+
+      for (const specDir of specPaths) {
+        if (path.resolve(specDir) === path.resolve(mainSpecDir)) {
+          continue;
+        }
+
+        try {
+          await rm(specDir, { recursive: true, force: true });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          errors.push(`${specDir}: ${message}`);
+        }
+      }
+
+      try {
+        const entries = await readdir(mainSpecDir, { withFileTypes: true });
+        for (const entry of entries) {
+          await rm(path.join(mainSpecDir, entry.name), { recursive: true, force: true });
+        }
+        writeFileAtomicSync(path.join(mainSpecDir, AUTO_BUILD_PATHS.SPEC_FILE), specContent);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        errors.push(`main spec dir: ${message}`);
+      }
+
+      cancelFallbackTimer(taskId);
+      taskStateManager.clearTask(taskId);
+      projectStore.invalidateTasksCache(project.id);
+      fileWatcher.unwatch(taskId).catch((error) => {
+        console.warn('[TASK_RESET] Failed to unwatch task after reset:', error);
+      });
+
+      if (errors.length > 0) {
+        return {
+          success: false,
+          error: `Task reset completed with errors: ${errors.join('; ')}`
+        };
+      }
+
+      return {
+        success: true,
+        data: { projectId: project.id }
+      };
     }
   );
 

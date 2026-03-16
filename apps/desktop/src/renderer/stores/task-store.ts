@@ -1074,6 +1074,39 @@ export async function deleteTask(
 }
 
 /**
+ * Reset a task to a clean backlog state while preserving spec.md.
+ */
+export async function resetTask(
+  taskId: string
+): Promise<{ success: boolean; error?: string }> {
+  const store = useTaskStore.getState();
+  const currentTask = store.tasks.find((task) => task.id === taskId || task.specId === taskId);
+
+  try {
+    const result = await window.electronAPI.resetTask(taskId);
+
+    if (result.success) {
+      const projectId = result.data?.projectId || currentTask?.projectId;
+      if (projectId) {
+        await loadTasks(projectId, { forceRefresh: true });
+      }
+      return { success: true };
+    }
+
+    return {
+      success: false,
+      error: result.error || 'Failed to reset task'
+    };
+  } catch (error) {
+    console.error('Error resetting task:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+/**
  * Delete multiple tasks
  * Permanently removes tasks from the project
  */

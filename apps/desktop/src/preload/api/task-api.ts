@@ -29,6 +29,7 @@ export interface TaskAPI {
     metadata?: TaskMetadata
   ) => Promise<IPCResult<Task>>;
   deleteTask: (taskId: string) => Promise<IPCResult>;
+  resetTask: (taskId: string) => Promise<IPCResult<{ projectId: string }>>;
   updateTask: (
     taskId: string,
     updates: { title?: string; description?: string }
@@ -112,6 +113,9 @@ export const createTaskAPI = (): TaskAPI => ({
 
   deleteTask: (taskId: string): Promise<IPCResult> =>
     ipcRenderer.invoke(IPC_CHANNELS.TASK_DELETE, taskId),
+
+  resetTask: (taskId: string): Promise<IPCResult<{ projectId: string }>> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TASK_RESET, taskId),
 
   updateTask: (
     taskId: string,
