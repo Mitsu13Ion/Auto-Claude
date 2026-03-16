@@ -56,8 +56,6 @@ import {
 import { AddProjectModal } from './AddProjectModal';
 import { GitSetupModal } from './GitSetupModal';
 import { RateLimitIndicator } from './RateLimitIndicator';
-
-import { UpdateBanner } from './UpdateBanner';
 import type { Project, GitStatus } from '../../shared/types';
 import { GITHUB_SUPPORT_DISABLED } from '../../shared/constants/config';
 
@@ -411,9 +409,6 @@ export function Sidebar({
 
         {/* Rate Limit Indicator - shows when Claude is rate limited */}
         <RateLimitIndicator />
-
-        {/* Update Banner - shows when app update is available */}
-        <UpdateBanner />
 
         {/* Bottom section with Settings, Help, and New Task */}
         <div className={cn("space-y-3 transition-all duration-300", isCollapsed ? "p-2" : "p-4")}>

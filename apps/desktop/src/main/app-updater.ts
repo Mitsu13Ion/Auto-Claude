@@ -27,10 +27,7 @@ import { IPC_CHANNELS } from '../shared/constants';
 import type { AppUpdateInfo } from '../shared/types';
 import { compareVersions } from './updater/version-manager';
 import { isMacOS } from './platform';
-
-// RiverCode: Auto-updater disabled to prevent overwriting with upstream releases.
-// Updates are managed manually via scripts/upstream-sync.py.
-const RIVERCODE_UPDATER_DISABLED = true;
+import { APP_UPDATER_DISABLED } from '../shared/constants/config';
 
 // GitHub repo info for API calls
 const GITHUB_OWNER = 'AndyMik90';
@@ -167,6 +164,9 @@ function formatReleaseNotes(releaseNotes: UpdateInfo['releaseNotes']): string | 
  * @param channel - The update channel to use
  */
 export function setUpdateChannel(channel: UpdateChannel): void {
+  if (APP_UPDATER_DISABLED) {
+    return;
+  }
   autoUpdater.channel = channel;
   // Enable pre-release scanning when beta channel is selected
   // This allows electron-updater to find beta releases on GitHub
@@ -205,9 +205,7 @@ let intentionalDowngrade = false;
  * @param betaUpdates - Whether to receive beta/pre-release updates
  */
 export function initializeAppUpdater(window: BrowserWindow, betaUpdates = false): void {
-  // RiverCode: Auto-updater disabled to prevent overwriting with upstream releases.
-  // Updates are managed manually via scripts/upstream-sync.py.
-  if (RIVERCODE_UPDATER_DISABLED) {
+  if (APP_UPDATER_DISABLED) {
     console.warn('[app-updater] Auto-updater is disabled for RiverCode fork');
     return;
   }
@@ -359,6 +357,9 @@ export function initializeAppUpdater(window: BrowserWindow, betaUpdates = false)
  * Called from IPC handler when user requests manual check
  */
 export async function checkForUpdates(): Promise<AppUpdateInfo | null> {
+  if (APP_UPDATER_DISABLED) {
+    return null;
+  }
   try {
     console.warn('[app-updater] Manual update check requested');
     const result = await autoUpdater.checkForUpdates();
@@ -396,6 +397,10 @@ export async function checkForUpdates(): Promise<AppUpdateInfo | null> {
  * Called from IPC handler when user requests manual download
  */
 export async function downloadUpdate(): Promise<void> {
+  if (APP_UPDATER_DISABLED) {
+    console.warn('[app-updater] Ignoring download request because updater is disabled');
+    return;
+  }
   try {
     console.warn('[app-updater] Manual update download requested');
     await autoUpdater.downloadUpdate();
@@ -441,6 +446,10 @@ function isRunningFromReadOnlyVolume(): boolean {
  * Returns false if running from a read-only volume (update cannot proceed)
  */
 export function quitAndInstall(): boolean {
+  if (APP_UPDATER_DISABLED) {
+    console.warn('[app-updater] Ignoring install request because updater is disabled');
+    return false;
+  }
   // Check if running from read-only volume before attempting install
   if (isRunningFromReadOnlyVolume()) {
     console.warn('[app-updater] Cannot install: running from read-only volume');
@@ -462,7 +471,7 @@ export function quitAndInstall(): boolean {
  * Get current app version
  */
 export function getCurrentVersion(): string {
-  return autoUpdater.currentVersion.version;
+  return app.getVersion();
 }
 
 /**
@@ -471,6 +480,9 @@ export function getCurrentVersion(): string {
  * after the download completed in the background.
  */
 export function getDownloadedUpdateInfo(): AppUpdateInfo | null {
+  if (APP_UPDATER_DISABLED) {
+    return null;
+  }
   return downloadedUpdateInfo;
 }
 
@@ -608,6 +620,9 @@ async function fetchLatestStableRelease(): Promise<AppUpdateInfo | null> {
  * 2. A stable version exists
  */
 export async function checkForStableDowngrade(): Promise<AppUpdateInfo | null> {
+  if (APP_UPDATER_DISABLED) {
+    return null;
+  }
   const currentVersion = getCurrentVersion();
 
   // Only check for downgrade if currently on a prerelease
@@ -641,6 +656,9 @@ export async function setUpdateChannelWithDowngradeCheck(
   channel: UpdateChannel,
   triggerDowngradeCheck = false
 ): Promise<AppUpdateInfo | null> {
+  if (APP_UPDATER_DISABLED) {
+    return null;
+  }
   // Use the shared channel-setting function to avoid code duplication
   setUpdateChannel(channel);
 
@@ -664,6 +682,10 @@ export async function setUpdateChannelWithDowngradeCheck(
  * Uses electron-updater with allowDowngrade enabled to download older stable versions
  */
 export async function downloadStableVersion(): Promise<void> {
+  if (APP_UPDATER_DISABLED) {
+    console.warn('[app-updater] Ignoring stable download request because updater is disabled');
+    return;
+  }
   // Switch to stable channel (resets allowPrerelease and clears downloadedUpdateInfo)
   setUpdateChannel('latest');
   // Enable downgrade to allow downloading older versions (e.g., stable when on beta)

@@ -126,6 +126,8 @@ export const AUTO_BUILD_PATHS = {
 
 /** Disable GitHub integration UI (issues, PRs) — RiverCode uses GitLab exclusively */
 export const GITHUB_SUPPORT_DISABLED = true;
+/** Disable Electron app self-updates for the RiverCode fork. */
+export const APP_UPDATER_DISABLED = true;
 
 function sanitizeProjectDataDir(autoBuildPath: string | undefined): string {
   const candidate = autoBuildPath?.trim();

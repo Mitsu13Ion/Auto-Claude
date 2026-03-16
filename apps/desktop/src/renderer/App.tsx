@@ -52,7 +52,6 @@ import { SDKRateLimitModal } from './components/SDKRateLimitModal';
 import { AuthFailureModal } from './components/AuthFailureModal';
 import { VersionWarningModal } from './components/VersionWarningModal';
 import { OnboardingWizard } from './components/onboarding';
-import { AppUpdateNotification } from './components/AppUpdateNotification';
 import { ProactiveSwapListener } from './components/ProactiveSwapListener';
 import { GitHubSetupModal } from './components/GitHubSetupModal';
 import { useProjectStore, loadProjects, addProject, initializeProject, removeProject } from './stores/project-store';
@@ -348,20 +347,6 @@ export function App() {
     window.addEventListener('open-app-settings', handleOpenAppSettings);
     return () => {
       window.removeEventListener('open-app-settings', handleOpenAppSettings);
-    };
-  }, []);
-
-  // Listen for app updates - auto-open settings to 'updates' section when update is ready
-  useEffect(() => {
-    // When an update is downloaded and ready to install, open settings to updates section
-    const cleanupDownloaded = window.electronAPI.onAppUpdateDownloaded(() => {
-      console.warn('[App] Update downloaded, opening settings to updates section');
-      setSettingsInitialSection('updates');
-      setIsSettingsDialogOpen(true);
-    });
-
-    return () => {
-      cleanupDownloaded();
     };
   }, []);
 
@@ -1194,9 +1179,6 @@ export function App() {
             setIsSettingsDialogOpen(true);
           }}
         />
-
-        {/* App Update Notification - shows when new app version is available */}
-        <AppUpdateNotification />
 
         {/* Global Download Indicator - shows Ollama model download progress */}
         <GlobalDownloadIndicator />

@@ -16,12 +16,14 @@ import {
   getCurrentVersion,
   getDownloadedUpdateInfo
 } from '../app-updater';
+import { APP_UPDATER_DISABLED } from '../../shared/constants/config';
 
 /**
  * Register all app-update-related IPC handlers
  */
 export function registerAppUpdateHandlers(): void {
   console.warn('[IPC] Registering app update handlers');
+  const disabledError = 'App updater is disabled in this build';
 
   // ============================================
   // App Update Operations
@@ -35,6 +37,9 @@ export function registerAppUpdateHandlers(): void {
     IPC_CHANNELS.APP_UPDATE_CHECK,
     async (): Promise<IPCResult<AppUpdateInfo | null>> => {
       try {
+        if (APP_UPDATER_DISABLED) {
+          return { success: true, data: null };
+        }
         const result = await checkForUpdates();
         return { success: true, data: result };
       } catch (error) {
@@ -55,6 +60,9 @@ export function registerAppUpdateHandlers(): void {
     IPC_CHANNELS.APP_UPDATE_DOWNLOAD,
     async (): Promise<IPCResult> => {
       try {
+        if (APP_UPDATER_DISABLED) {
+          return { success: false, error: disabledError };
+        }
         await downloadUpdate();
         return { success: true };
       } catch (error) {
@@ -75,6 +83,9 @@ export function registerAppUpdateHandlers(): void {
     IPC_CHANNELS.APP_UPDATE_DOWNLOAD_STABLE,
     async (): Promise<IPCResult> => {
       try {
+        if (APP_UPDATER_DISABLED) {
+          return { success: false, error: disabledError };
+        }
         await downloadStableVersion();
         return { success: true };
       } catch (error) {
@@ -95,6 +106,9 @@ export function registerAppUpdateHandlers(): void {
     IPC_CHANNELS.APP_UPDATE_INSTALL,
     async (): Promise<IPCResult> => {
       try {
+        if (APP_UPDATER_DISABLED) {
+          return { success: false, error: disabledError };
+        }
         // quitAndInstall() returns false if blocked by read-only volume,
         // but the user is notified via APP_UPDATE_READONLY_VOLUME event instead.
         // The preload fires this as fire-and-forget, so the return value is
@@ -139,6 +153,9 @@ export function registerAppUpdateHandlers(): void {
     IPC_CHANNELS.APP_UPDATE_GET_DOWNLOADED,
     async (): Promise<IPCResult<AppUpdateInfo | null>> => {
       try {
+        if (APP_UPDATER_DISABLED) {
+          return { success: true, data: null };
+        }
         const downloadedInfo = getDownloadedUpdateInfo();
         return { success: true, data: downloadedInfo };
       } catch (error) {

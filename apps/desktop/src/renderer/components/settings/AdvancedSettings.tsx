@@ -19,6 +19,7 @@ import { Label } from '../ui/label';
 import { Switch } from '../ui/switch';
 import { Progress } from '../ui/progress';
 import { SettingsSection } from './SettingsSection';
+import { APP_UPDATER_DISABLED } from '../../../shared/constants/config';
 import type {
   AppSettings,
   AppUpdateAvailableEvent,
@@ -75,6 +76,7 @@ interface AdvancedSettingsProps {
  */
 export function AdvancedSettings({ settings, onSettingsChange, section, version }: AdvancedSettingsProps) {
   const { t } = useTranslation('settings');
+  const appUpdaterDisabled = APP_UPDATER_DISABLED;
 
   // Electron app update state
   const [appUpdateInfo, setAppUpdateInfo] = useState<AppUpdateAvailableEvent | null>(null);
@@ -91,7 +93,7 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
 
   // Check for updates on mount, including any already-downloaded updates
   useEffect(() => {
-    if (section !== 'updates') {
+    if (section !== 'updates' || appUpdaterDisabled) {
       return;
     }
 
@@ -143,10 +145,14 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
     return () => {
       isCancelled = true;
     };
-  }, [section]);
+  }, [section, appUpdaterDisabled]);
 
   // Listen for app update events
   useEffect(() => {
+    if (appUpdaterDisabled) {
+      return;
+    }
+
     const cleanupAvailable = window.electronAPI.onAppUpdateAvailable((info) => {
       setAppUpdateInfo(info);
       setIsCheckingAppUpdate(false);
@@ -195,7 +201,7 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
       cleanupReadOnlyVolume();
       cleanupError();
     };
-  }, []);
+  }, [appUpdaterDisabled]);
 
   const checkForAppUpdates = async () => {
     setIsCheckingAppUpdate(true);
@@ -258,6 +264,46 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
   };
 
   if (section === 'updates') {
+    if (appUpdaterDisabled) {
+      return (
+        <SettingsSection
+          title={t('updates.title')}
+          description={t('updates.description')}
+        >
+          <div className="space-y-6">
+            <div className="rounded-lg border border-warning/30 bg-warning/5 p-5 space-y-3">
+              <div className="flex items-center gap-2 text-warning">
+                <AlertCircle className="h-5 w-5" />
+                <h3 className="font-semibold">{t('updates.updaterDisabled')}</h3>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {t('updates.updaterDisabledDescription')}
+              </p>
+              <div className="rounded-lg border border-border bg-muted/50 p-4">
+                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">{t('updates.version')}</p>
+                <p className="text-base font-medium text-foreground">{version || t('updates.loading')}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-4 rounded-lg border border-border">
+              <div className="space-y-1">
+                <Label className="font-medium text-foreground">{t('updates.autoUpdateProjects')}</Label>
+                <p className="text-sm text-muted-foreground">
+                  {t('updates.autoUpdateProjectsDescription')}
+                </p>
+              </div>
+              <Switch
+                checked={settings.autoUpdateAutoBuild}
+                onCheckedChange={(checked) =>
+                  onSettingsChange({ ...settings, autoUpdateAutoBuild: checked })
+                }
+              />
+            </div>
+          </div>
+        </SettingsSection>
+      );
+    }
+
     return (
       <SettingsSection
         title={t('updates.title')}
