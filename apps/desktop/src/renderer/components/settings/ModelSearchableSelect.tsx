@@ -29,6 +29,8 @@ interface ModelSearchableSelectProps {
   value: string;
   /** Callback when model is selected */
   onChange: (modelId: string) => void;
+  /** Optional callback with the full selected model payload */
+  onSelectModelInfo?: (model: ModelInfo) => void;
   /** Placeholder text when no model selected */
   placeholder?: string;
   /** Base URL for API (used for caching key) */
@@ -58,6 +60,7 @@ interface ModelSearchableSelectProps {
 export function ModelSearchableSelect({
   value,
   onChange,
+  onSelectModelInfo,
   placeholder,
   baseUrl,
   apiKey,
@@ -172,8 +175,9 @@ export function ModelSearchableSelect({
   /**
    * Handle model selection from dropdown.
    */
-  const handleSelectModel = (modelId: string) => {
-    onChange(modelId);
+  const handleSelectModel = (model: ModelInfo) => {
+    onChange(model.id);
+    onSelectModelInfo?.(model);
     handleClose();
   };
 
@@ -288,7 +292,7 @@ export function ModelSearchableSelect({
                 <button
                   key={model.id}
                   type="button"
-                  onClick={() => handleSelectModel(model.id)}
+                  onClick={() => handleSelectModel(model)}
                   className={cn(
                     'w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-start gap-2',
                     value === model.id && 'bg-accent'

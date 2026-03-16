@@ -123,6 +123,10 @@ describe('isAdaptiveModel', () => {
     expect(isAdaptiveModel('claude-opus-4-6')).toBe(true);
   });
 
+  it('returns true for Sonnet 4.6', () => {
+    expect(isAdaptiveModel('claude-sonnet-4-6')).toBe(true);
+  });
+
   it('returns false for Sonnet', () => {
     expect(isAdaptiveModel('claude-sonnet-4-5-20250929')).toBe(false);
   });
@@ -145,6 +149,12 @@ describe('getThinkingKwargsForModel', () => {
     expect(result.effortLevel).toBe('high');
   });
 
+  it('returns budgetTokens and effortLevel for adaptive model (Sonnet 4.6)', () => {
+    const result = getThinkingKwargsForModel('claude-sonnet-4-6', 'medium');
+    expect(result.maxThinkingTokens).toBe(4096);
+    expect(result.effortLevel).toBe('medium');
+  });
+
   it('maps low thinking level correctly', () => {
     const result = getThinkingKwargsForModel('claude-opus-4-6', 'low');
     expect(result.maxThinkingTokens).toBe(1024);
@@ -163,6 +173,12 @@ describe('transformThinkingConfig', () => {
     const config = transformThinkingConfig('anthropic', 'claude-opus-4-6', 'high');
     expect(config.budgetTokens).toBe(16384);
     expect(config.effortLevel).toBe('high');
+  });
+
+  it('returns budgetTokens + effortLevel for Anthropic Sonnet 4.6', () => {
+    const config = transformThinkingConfig('anthropic', 'claude-sonnet-4-6', 'medium');
+    expect(config.budgetTokens).toBe(4096);
+    expect(config.effortLevel).toBe('medium');
   });
 
   it('returns reasoningEffort for OpenAI', () => {

@@ -40,11 +40,13 @@ interface TaskLogsProps {
   phaseLogs: TaskLogs | null;
   isLoadingLogs: boolean;
   expandedPhases: Set<TaskLogPhase>;
+  loadingOlderPhases: Set<TaskLogPhase>;
   isStuck: boolean;
   logsEndRef: React.RefObject<HTMLDivElement | null>;
   logsContainerRef: React.RefObject<HTMLDivElement | null>;
   onLogsScroll: (e: React.UIEvent<HTMLDivElement>) => void;
   onTogglePhase: (phase: TaskLogPhase) => void;
+  onLoadOlderPhase: (phase: TaskLogPhase) => void;
 }
 
 const PHASE_LABELS: Record<TaskLogPhase, string> = {
@@ -117,6 +119,31 @@ function getPhaseConfig(
       model: resolveModelLabel(metadata.model, metadata.provider),
       thinking: THINKING_SHORT_LABELS[metadata.thinkingLevel] || metadata.thinkingLevel
     };
+  }
+
+  return null;
+}
+
+function getRuntimePhaseConfig(
+  phaseLog: TaskPhaseLog | null | undefined,
+): { model: string; thinking: string } | null {
+  if (!phaseLog?.entries?.length) {
+    return null;
+  }
+
+  for (let i = phaseLog.entries.length - 1; i >= 0; i -= 1) {
+    const metrics = phaseLog.entries[i].metrics;
+    if (!metrics?.modelId) {
+      continue;
+    }
+
+    const provider = typeof metrics.provider === 'string' ? metrics.provider : undefined;
+    const model = resolveModelLabel(metrics.modelId, provider);
+    const thinking = typeof metrics.thinkingLevel === 'string'
+      ? (THINKING_SHORT_LABELS[metrics.thinkingLevel as ThinkingLevel] || metrics.thinkingLevel)
+      : 'Unknown';
+
+    return { model, thinking };
   }
 
   return null;
@@ -215,11 +242,13 @@ export function TaskLogs({
   phaseLogs,
   isLoadingLogs,
   expandedPhases,
+  loadingOlderPhases,
   isStuck,
   logsEndRef,
   logsContainerRef,
   onLogsScroll,
-  onTogglePhase
+  onTogglePhase,
+  onLoadOlderPhase
 }: TaskLogsProps) {
   const latestErrorMessage = getLatestTaskErrorMessage(task, phaseLogs);
   const unmatchedLegacyErrors = getUnmatchedLegacyErrorMessages(task, phaseLogs);
@@ -297,9 +326,11 @@ export function TaskLogs({
                 phaseLog={phaseLogs.phases[phase]}
                 isExpanded={expandedPhases.has(phase)}
                 onToggle={() => onTogglePhase(phase)}
+                onLoadOlder={() => onLoadOlderPhase(phase)}
+                isLoadingOlder={loadingOlderPhases.has(phase)}
                 isTaskStuck={isStuck}
                 isTaskSettled={task.status === 'human_review' || task.status === 'done' || task.status === 'pr_created' || task.status === 'error'}
-                phaseConfig={getPhaseConfig(task.metadata, phase)}
+                phaseConfig={getRuntimePhaseConfig(phaseLogs.phases[phase]) ?? getPhaseConfig(task.metadata, phase)}
               />
             ))}
             <div ref={logsEndRef} />
@@ -328,12 +359,24 @@ interface PhaseLogSectionProps {
   phaseLog: TaskPhaseLog | null;
   isExpanded: boolean;
   onToggle: () => void;
+  onLoadOlder?: () => void;
+  isLoadingOlder?: boolean;
   isTaskStuck?: boolean;
   isTaskSettled?: boolean;
   phaseConfig?: { model: string; thinking: string } | null;
 }
 
-function PhaseLogSection({ phase, phaseLog, isExpanded, onToggle, isTaskStuck, isTaskSettled, phaseConfig }: PhaseLogSectionProps) {
+function PhaseLogSection({
+  phase,
+  phaseLog,
+  isExpanded,
+  onToggle,
+  onLoadOlder,
+  isLoadingOlder,
+  isTaskStuck,
+  isTaskSettled,
+  phaseConfig
+}: PhaseLogSectionProps) {
   const Icon = PHASE_ICONS[phase];
   const logOrder = useSettingsStore(s => s.settings.logOrder);
   // If the task is in a settled state (human_review, done, etc.), any "active" phase
@@ -343,6 +386,11 @@ function PhaseLogSection({ phase, phaseLog, isExpanded, onToggle, isTaskStuck, i
     status = 'completed';
   }
   const hasEntries = (phaseLog?.entries.length || 0) > 0;
+  const totalEntries = phaseLog?.totalEntries ?? phaseLog?.entries.length ?? 0;
+  const hasOlderEntries = Boolean(phaseLog?.hasOlderEntries);
+  const entryCountLabel = totalEntries > (phaseLog?.entries.length ?? 0)
+    ? `${phaseLog?.entries.length}/${totalEntries} entries`
+    : `${phaseLog?.entries.length ?? 0} entries`;
 
   // Memoize sorted entries to avoid re-calculating on every render
   // Entries are naturally in chronological order (oldest first from append())
@@ -350,6 +398,22 @@ function PhaseLogSection({ phase, phaseLog, isExpanded, onToggle, isTaskStuck, i
     const entries = phaseLog?.entries || [];
     return logOrder === 'reverse-chronological' ? [...entries].reverse() : entries;
   }, [phaseLog?.entries, logOrder]);
+
+  const loadOlderButton = hasOlderEntries && onLoadOlder ? (
+    <button
+      type="button"
+      onClick={onLoadOlder}
+      disabled={isLoadingOlder}
+      className={cn(
+        'inline-flex items-center gap-2 self-start rounded-md border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground transition-colors',
+        'hover:bg-secondary/60 hover:text-foreground',
+        isLoadingOlder && 'cursor-not-allowed opacity-60'
+      )}
+    >
+      {isLoadingOlder ? <Loader2 className="h-3 w-3 animate-spin" /> : <ChevronRight className="h-3 w-3" />}
+      <span>{isLoadingOlder ? 'Loading older entries...' : 'Load older entries'}</span>
+    </button>
+  ) : null;
 
   const getStatusBadge = () => {
     switch (status) {
@@ -417,7 +481,7 @@ function PhaseLogSection({ phase, phaseLog, isExpanded, onToggle, isTaskStuck, i
             <span className="font-medium text-sm">{PHASE_LABELS[phase]}</span>
             {hasEntries && (
               <span className="text-xs text-muted-foreground">
-                ({phaseLog?.entries.length} entries)
+                ({entryCountLabel})
               </span>
             )}
           </div>
@@ -442,12 +506,16 @@ function PhaseLogSection({ phase, phaseLog, isExpanded, onToggle, isTaskStuck, i
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="mt-1 ml-6 border-l-2 border-border pl-4 py-2 space-y-1">
-          {!hasEntries ? (
+          {!hasEntries && !loadOlderButton ? (
             <p className="text-xs text-muted-foreground italic">No logs yet</p>
           ) : (
-            displayedEntries.map((entry) => (
-              <LogEntry key={`${entry.timestamp}-${entry.type}-${entry.content}`} entry={entry} />
-            ))
+            <>
+              {logOrder === 'chronological' && loadOlderButton}
+              {displayedEntries.map((entry) => (
+                <LogEntry key={`${entry.timestamp}-${entry.type}-${entry.content}`} entry={entry} />
+              ))}
+              {logOrder === 'reverse-chronological' && loadOlderButton}
+            </>
           )}
         </div>
       </CollapsibleContent>

@@ -266,6 +266,56 @@ describe('Task Logs Integration (IPC → Service → State)', () => {
       expect(result.error).toBe('Failed to parse logs');
     });
 
+    it('should return only the most recent phase entries for large logs', async () => {
+      const { projectStore } = await import('../../../project-store');
+      const { taskLogService } = await import('../../../task-log-service');
+
+      const mockProject = {
+        id: 'project-123',
+        path: '/absolute/path/to/project',
+        autoBuildPath: '.auto-claude'
+      };
+
+      const planningEntries = Array.from({ length: 250 }, (_, index) => ({
+        type: 'text' as const,
+        content: `Planning entry ${index}`,
+        phase: 'planning' as const,
+        timestamp: `2024-01-01T00:${String(index % 60).padStart(2, '0')}:00Z`
+      }));
+
+      const mockLogs: TaskLogs = {
+        spec_id: '001-test-task',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T01:00:00Z',
+        phases: {
+          planning: {
+            phase: 'planning',
+            status: 'completed',
+            started_at: '2024-01-01T00:00:00Z',
+            completed_at: '2024-01-01T00:30:00Z',
+            entries: planningEntries
+          },
+          coding: { phase: 'coding', status: 'pending', started_at: null, completed_at: null, entries: [] },
+          validation: { phase: 'validation', status: 'pending', started_at: null, completed_at: null, entries: [] }
+        }
+      };
+
+      (projectStore.getProject as Mock).mockReturnValue(mockProject);
+      (taskLogService.loadLogs as Mock).mockReturnValue(mockLogs);
+
+      const handler = ipcHandlers['task:logsGet'];
+      const result = await handler({}, 'project-123', '001-test-task') as IPCResult<TaskLogs>;
+
+      expect(result.success).toBe(true);
+      expect(result.data?.phases.planning.entries).toHaveLength(200);
+      expect(result.data?.phases.planning.totalEntries).toBe(250);
+      expect(result.data?.phases.planning.visibleStartIndex).toBe(50);
+      expect(result.data?.phases.planning.visibleEndIndex).toBe(250);
+      expect(result.data?.phases.planning.hasOlderEntries).toBe(true);
+      expect(result.data?.phases.planning.entries[0]?.content).toBe('Planning entry 50');
+      expect(result.data?.phases.planning.entries.at(-1)?.content).toBe('Planning entry 249');
+    });
+
     it('should return null logs when file exists but has no content', async () => {
       const { projectStore } = await import('../../../project-store');
       const { taskLogService } = await import('../../../task-log-service');
@@ -286,6 +336,58 @@ describe('Task Logs Integration (IPC → Service → State)', () => {
 
       expect(result.success).toBe(true);
       expect(result.data).toBeNull();
+    });
+  });
+
+  describe('TASK_LOGS_GET_PHASE handler', () => {
+    it('should return an older window of entries for one phase', async () => {
+      const { projectStore } = await import('../../../project-store');
+      const { taskLogService } = await import('../../../task-log-service');
+
+      const mockProject = {
+        id: 'project-123',
+        path: '/absolute/path/to/project',
+        autoBuildPath: '.auto-claude'
+      };
+
+      const planningEntries = Array.from({ length: 300 }, (_, index) => ({
+        type: 'text' as const,
+        content: `Planning entry ${index}`,
+        phase: 'planning' as const,
+        timestamp: `2024-01-01T00:${String(index % 60).padStart(2, '0')}:00Z`
+      }));
+
+      const mockLogs: TaskLogs = {
+        spec_id: '001-test-task',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T01:00:00Z',
+        phases: {
+          planning: {
+            phase: 'planning',
+            status: 'completed',
+            started_at: '2024-01-01T00:00:00Z',
+            completed_at: '2024-01-01T00:30:00Z',
+            entries: planningEntries
+          },
+          coding: { phase: 'coding', status: 'pending', started_at: null, completed_at: null, entries: [] },
+          validation: { phase: 'validation', status: 'pending', started_at: null, completed_at: null, entries: [] }
+        }
+      };
+
+      (projectStore.getProject as Mock).mockReturnValue(mockProject);
+      (taskLogService.loadLogs as Mock).mockReturnValue(mockLogs);
+
+      const handler = ipcHandlers['task:logsGetPhase'];
+      const result = await handler({}, 'project-123', '001-test-task', 'planning', 200, 100);
+
+      expect(result.success).toBe(true);
+      expect(result.data?.entries).toHaveLength(100);
+      expect(result.data?.visibleStartIndex).toBe(100);
+      expect(result.data?.visibleEndIndex).toBe(200);
+      expect(result.data?.totalEntries).toBe(300);
+      expect(result.data?.hasOlderEntries).toBe(true);
+      expect(result.data?.entries[0]?.content).toBe('Planning entry 100');
+      expect(result.data?.entries.at(-1)?.content).toBe('Planning entry 199');
     });
   });
 

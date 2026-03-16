@@ -753,6 +753,18 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
           const metadataPath = path.join(specDir, 'task_metadata.json');
           try {
             writeFileSync(metadataPath, JSON.stringify(updatedMetadata, null, 2), 'utf-8');
+
+            const worktreePath = findTaskWorktree(project.path, task.specId);
+            if (worktreePath) {
+              const worktreeSpecDir = path.join(worktreePath, autoBuildDir, 'specs', task.specId);
+              const worktreeMetadataPath = path.join(worktreeSpecDir, 'task_metadata.json');
+              try {
+                mkdirSync(worktreeSpecDir, { recursive: true });
+                writeFileSync(worktreeMetadataPath, JSON.stringify(updatedMetadata, null, 2), 'utf-8');
+              } catch (worktreeMetadataErr) {
+                console.error('Failed to update worktree task_metadata.json:', worktreeMetadataErr);
+              }
+            }
           } catch (err) {
             console.error('Failed to update task_metadata.json:', err);
           }

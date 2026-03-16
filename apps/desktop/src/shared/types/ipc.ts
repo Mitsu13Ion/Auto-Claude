@@ -44,7 +44,9 @@ import type {
   TaskRecoveryOptions,
   TaskMetadata,
   TaskLogs,
+  TaskLogPhase,
   TaskLogStreamChunk,
+  TaskPhaseLog,
   ImageAttachment,
   ReviewReason,
   MergeProgress
@@ -816,6 +818,13 @@ export interface ElectronAPI {
 
   // Task logs operations
   getTaskLogs: (projectId: string, specId: string) => Promise<IPCResult<TaskLogs | null>>;
+  getTaskLogPhase: (
+    projectId: string,
+    specId: string,
+    phase: TaskLogPhase,
+    beforeIndex?: number,
+    limit?: number
+  ) => Promise<IPCResult<TaskPhaseLog | null>>;
   watchTaskLogs: (projectId: string, specId: string) => Promise<IPCResult>;
   unwatchTaskLogs: (specId: string) => Promise<IPCResult>;
 

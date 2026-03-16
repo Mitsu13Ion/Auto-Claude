@@ -158,6 +158,7 @@ describe('getThinkingBudget', () => {
 describe('isAdaptiveModel', () => {
   it('should return true for adaptive models', () => {
     expect(isAdaptiveModel('claude-opus-4-6')).toBe(true);
+    expect(isAdaptiveModel('claude-sonnet-4-6')).toBe(true);
   });
 
   it('should return false for non-adaptive models', () => {
@@ -180,6 +181,12 @@ describe('getThinkingKwargsForModel', () => {
     const kwargs = getThinkingKwargsForModel('claude-opus-4-6', 'high');
     expect(kwargs.maxThinkingTokens).toBe(16384);
     expect(kwargs.effortLevel).toBe('high');
+  });
+
+  it('should treat Claude Sonnet 4.6 as adaptive', () => {
+    const kwargs = getThinkingKwargsForModel('claude-sonnet-4-6', 'medium');
+    expect(kwargs.maxThinkingTokens).toBe(4096);
+    expect(kwargs.effortLevel).toBe('medium');
   });
 
   it('should map thinking levels to effort levels correctly', () => {

@@ -39,16 +39,19 @@ import { BuildOrchestrator } from '../orchestration/build-orchestrator';
 import { QALoop } from '../orchestration/qa-loop';
 import { SpecOrchestrator } from '../orchestration/spec-orchestrator';
 import type { SpecPhase } from '../orchestration/spec-orchestrator';
+import { syncSpecArtifactsToSource } from '../orchestration/spec-sync';
 import type { AgentType } from '../config/agent-configs';
 import type { Phase } from '../config/types';
 import type { ExecutionPhase } from '../../../shared/constants/phase-protocol';
-import { getPhaseThinking } from '../config/phase-config';
+import { getPhaseThinking, loadTaskMetadata, resolveModelId } from '../config/phase-config';
 import { TaskLogWriter } from '../logging/task-log-writer';
 import { loadProjectInstructions, injectContext } from '../prompts/prompt-loader';
 import { createMcpClientsForAgent, mergeMcpTools, closeAllMcpClients } from '../mcp/client';
 import type { McpClientResult } from '../mcp/types';
 import { runProjectIndexer } from '../project/project-indexer';
 import { TaskRunGuard } from './task-run-guard';
+import { resolveModelEquivalent } from '../../../shared/constants/models';
+import type { BuiltinProvider } from '../../../shared/types/provider-account';
 
 // =============================================================================
 // Validation
@@ -174,8 +177,13 @@ function applyTaskBudget(
   phase: Phase,
   sessionNumber: number,
   result: SessionResult,
+  runtime?: {
+    provider?: string;
+    modelId?: string;
+    thinkingLevel?: string;
+  },
 ): SessionResult {
-  const budgetExceededMessage = taskRunGuard.recordSession(agentType, phase, sessionNumber, result);
+  const budgetExceededMessage = taskRunGuard.recordSession(agentType, phase, sessionNumber, result, runtime);
   if (!budgetExceededMessage) {
     return result;
   }
@@ -230,6 +238,39 @@ function checkContinuationBudget(checkpoint: {
   }
 
   return null;
+}
+
+async function resolveRuntimeModelForPhase(
+  specDir: string,
+  phase: Phase,
+  baseSession: SerializableSessionConfig,
+): Promise<{ modelId: string; providerWarning?: string }> {
+  const baseProvider = baseSession.provider as BuiltinProvider;
+  const metadata = await loadTaskMetadata(specDir);
+  const targetProvider = (metadata?.phaseProviders?.[phase] ?? metadata?.provider ?? baseProvider) as BuiltinProvider;
+
+  if (targetProvider !== baseProvider) {
+    return {
+      modelId: baseSession.modelId,
+      providerWarning: `Task metadata requested provider "${targetProvider}" for phase "${phase}", but the running worker is locked to "${baseProvider}" until restart.`,
+    };
+  }
+
+  const configuredModel = metadata?.isAutoProfile
+    ? metadata.phaseModels?.[phase]
+    : metadata?.model;
+
+  if (!configuredModel) {
+    return { modelId: baseSession.modelId };
+  }
+
+  const resolvedFromShorthand = resolveModelId(configuredModel);
+  const equivalent = resolveModelEquivalent(configuredModel, baseProvider)
+    ?? resolveModelEquivalent(resolvedFromShorthand, baseProvider);
+
+  return {
+    modelId: equivalent?.modelId ?? resolvedFromShorthand,
+  };
 }
 
 function buildAggregatedResult(
@@ -388,6 +429,38 @@ async function assemblePrompt(
   });
 }
 
+function buildHumanFeedbackPromptSupplement(
+  specDir: string,
+  context: {
+    humanFeedbackRequest?: string;
+    humanFeedbackImagePaths?: string[];
+  }
+): string {
+  const parts: string[] = [];
+
+  parts.push('## HUMAN QA FEEDBACK (ORCHESTRATOR-INJECTED)');
+  parts.push(`Primary fix request file: ${join(specDir, 'QA_FIX_REQUEST.md')}`);
+  parts.push('Treat this human QA rejection as authoritative and address every requested fix.');
+
+  if (context.humanFeedbackRequest) {
+    parts.push('');
+    parts.push('Latest QA fix request snapshot:');
+    parts.push('```md');
+    parts.push(compactPromptBlock(context.humanFeedbackRequest, 6_000));
+    parts.push('```');
+  }
+
+  if (context.humanFeedbackImagePaths && context.humanFeedbackImagePaths.length > 0) {
+    parts.push('');
+    parts.push('Feedback images are attached on disk. Read each image explicitly with the Read tool before fixing visual or UX issues:');
+    for (const imagePath of context.humanFeedbackImagePaths) {
+      parts.push(`- ${imagePath}`);
+    }
+  }
+
+  return parts.join('\n');
+}
+
 // =============================================================================
 // Single Session Runner
 // =============================================================================
@@ -417,12 +490,12 @@ async function runSingleSession(
     return buildBudgetExceededResult(budgetStopMessage);
   }
 
-  // Use queue-resolved model ID from baseSession (already mapped to the correct
-  // provider-specific model, e.g., 'gpt-5.3-codex' for OpenAI Codex).
-  // getPhaseModel() only knows local shorthands (opus → claude-opus-4-6) and
-  // would create a mismatch when the provider queue selected a non-Anthropic account.
-  const phaseModelId = baseSession.modelId;
   const phaseThinking = await getPhaseThinking(specDir, phase);
+  const runtimeModel = await resolveRuntimeModelForPhase(specDir, phase, baseSession);
+  if (runtimeModel.providerWarning) {
+    postLog(runtimeModel.providerWarning);
+  }
+  const phaseModelId = runtimeModel.modelId;
 
   const model = createProvider({
     config: {
@@ -529,18 +602,22 @@ async function runSingleSession(
     logSessionFailure(sessionResult.error.message, phase, formatErrorDetail(sessionResult.error.cause));
   }
 
-  const guardedResult = applyTaskBudget(agentType, phase, sessionNumber, sessionResult);
+  const finalResult = applyTaskBudget(agentType, phase, sessionNumber, sessionResult, {
+    provider: baseSession.provider,
+    modelId: phaseModelId,
+    thinkingLevel: phaseThinking,
+  });
 
   // End phase logging — mark as completed or failed based on outcome (skip when orchestrator manages phases)
   if (logWriter && !skipPhaseLogging) {
-    const success = guardedResult.outcome === 'completed';
+    const success = finalResult.outcome === 'completed';
     logWriter.endPhase(phase, success);
   }
   if (logWriter) {
     logWriter.setSubtask(undefined);
   }
 
-  return guardedResult;
+  return finalResult;
 }
 
 // =============================================================================
@@ -724,6 +801,11 @@ async function runDefaultSession(
       defaultPhase,
       session.sessionNumber ?? 1,
       sessionResult,
+      {
+        provider: session.provider,
+        modelId: session.modelId,
+        thinkingLevel: session.thinkingLevel,
+      },
     );
   } finally {
     if (result?.error) {
@@ -774,6 +856,7 @@ async function runBuildOrchestrator(
     projectDir: session.projectDir,
     sourceSpecDir: session.sourceSpecDir,
     abortSignal: abortController.signal,
+    syncSpecToSource: syncSpecArtifactsToSource,
 
     generatePrompt: async (agentType, _phase, context) => {
       const promptName = agentType === 'coder' ? 'coder' : agentType;
@@ -970,9 +1053,13 @@ async function runQALoop(
     projectDir: session.projectDir,
     abortSignal: abortController.signal,
 
-    generatePrompt: async (agentType, _context) => {
+    generatePrompt: async (agentType, context) => {
       const promptName = agentType === 'qa_fixer' ? 'qa_fixer' : 'qa_reviewer';
-      return assemblePrompt(promptName, session);
+      let prompt = await assemblePrompt(promptName, session);
+      if (agentType === 'qa_fixer' && context.isHumanFeedback) {
+        prompt += `\n\n${buildHumanFeedbackPromptSupplement(session.specDir, context)}`;
+      }
+      return prompt;
     },
 
     runSession: async (runConfig) => {
@@ -1373,7 +1460,11 @@ async function runAgenticSpecOrchestrator(
       oauthTokenFilePath: session.oauthTokenFilePath,
     });
 
-    result = applyTaskBudget('spec_orchestrator', 'spec', 1, sessionResult);
+    result = applyTaskBudget('spec_orchestrator', 'spec', 1, sessionResult, {
+      provider: session.provider,
+      modelId: session.modelId,
+      thinkingLevel: session.thinkingLevel,
+    });
   } finally {
     if (result?.error) {
       logSessionFailure(
@@ -1506,7 +1597,7 @@ function buildKickoffMessage(agentType: AgentType, specDir: string, projectDir: 
     case 'qa_reviewer':
       return `Review the implementation in ${projectDir} against the specification in ${specDir}/spec.md. Write your findings to ${specDir}/qa_report.md with a clear "Status: PASSED" or "Status: FAILED" line.`;
     case 'qa_fixer':
-      return `Read ${specDir}/qa_report.md for the issues found by QA review. Fix all issues in ${projectDir}. After fixing, update ${specDir}/qa_report.md to indicate fixes have been applied.`;
+      return `Read ${specDir}/QA_FIX_REQUEST.md if it exists for the latest explicit fix request, then read ${specDir}/qa_report.md for the issues found by QA review. Fix all issues in ${projectDir}. After fixing, update ${specDir}/qa_report.md to indicate fixes have been applied.`;
     default:
       return `Complete the task described in your system prompt. Spec directory: ${specDir}. Project directory: ${projectDir}`;
   }

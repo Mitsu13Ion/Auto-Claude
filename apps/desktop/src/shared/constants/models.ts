@@ -36,13 +36,26 @@ export interface ModelOption {
   };
 }
 
+const ANTHROPIC_OAUTH_MODEL_OPTIONS: ModelOption[] = [
+  { value: 'claude-opus-4-6', label: 'Claude Opus 4.6 (Current)', provider: 'anthropic', description: '1M context', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 1000000 } },
+  { value: 'claude-opus-4-5-20251101', label: 'Claude Opus 4.5', provider: 'anthropic', description: 'Active until at least Nov 24 2026', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 200000 } },
+  { value: 'claude-opus-4-1-20250805', label: 'Claude Opus 4.1', provider: 'anthropic', description: 'Active until at least Aug 5 2026', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 200000 } },
+  { value: 'claude-opus-4-20250514', label: 'Claude Opus 4', provider: 'anthropic', description: 'Active until at least May 14 2026', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 200000 } },
+  { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Current)', provider: 'anthropic', description: '1M context', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 1000000 } },
+  { value: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5', provider: 'anthropic', description: 'Active until at least Sep 29 2026', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 200000 } },
+  { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', provider: 'anthropic', description: 'Active until at least May 14 2026', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 200000 } },
+  { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (Current)', provider: 'anthropic', description: '200K context', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 200000 } },
+  { value: 'claude-3-haiku-20240307', label: 'Claude 3 Haiku (Deprecated)', provider: 'anthropic', description: 'Deprecated Feb 19 2026, retires Apr 20 2026', capabilities: { thinking: false, tools: true, vision: true, contextWindow: 200000 } },
+];
+
 export const ALL_AVAILABLE_MODELS: ModelOption[] = [
   // Anthropic
-  { value: 'opus', label: 'Claude Opus 4.6', provider: 'anthropic', description: 'Most capable', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 200000 } },
+  { value: 'opus', label: 'Claude Opus 4.6', provider: 'anthropic', description: 'Most capable', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 1000000 } },
   { value: 'opus-1m', label: 'Claude Opus 4.6 (1M)', provider: 'anthropic', description: '1M context', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 1000000 } },
-  { value: 'sonnet', label: 'Claude Sonnet 4.6', provider: 'anthropic', description: 'Balanced', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 200000 } },
+  { value: 'sonnet', label: 'Claude Sonnet 4.6', provider: 'anthropic', description: 'Balanced', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 1000000 } },
   { value: 'opus-4.5', label: 'Claude Opus 4.5', provider: 'anthropic', description: 'Legacy', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 200000 } },
   { value: 'haiku', label: 'Claude Haiku 4.5', provider: 'anthropic', description: 'Fast', capabilities: { thinking: false, tools: true, vision: true, contextWindow: 200000 } },
+  ...ANTHROPIC_OAUTH_MODEL_OPTIONS,
   // OpenAI
   { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', provider: 'openai', description: 'Agentic coding', capabilities: { thinking: true, tools: true, vision: true, contextWindow: 1047576 } },
   { value: 'gpt-5.2', label: 'GPT-5.2', provider: 'openai', description: 'Flagship', apiKeyOnly: true, capabilities: { thinking: true, tools: true, vision: true, contextWindow: 400000 } },
@@ -354,10 +367,16 @@ export function getProviderPresetOrFallback(provider: BuiltinProvider, presetId:
 }
 
 // Models that support Fast Mode (same model, faster API routing, higher cost)
-export const FAST_MODE_MODELS: readonly string[] = ['opus', 'opus-1m'] as const;
+export const FAST_MODE_MODELS: readonly string[] = ['opus', 'opus-1m', 'sonnet'] as const;
 
-// Models that use adaptive thinking (Opus dynamically decides how much to think within the budget cap)
-export const ADAPTIVE_THINKING_MODELS: readonly string[] = ['opus', 'opus-1m'] as const;
+// Models that use adaptive thinking (the current 4.6 Anthropic generation can decide effort within the budget cap)
+export const ADAPTIVE_THINKING_MODELS: readonly string[] = [
+  'opus',
+  'opus-1m',
+  'sonnet',
+  'claude-opus-4-6',
+  'claude-sonnet-4-6',
+] as const;
 
 // Valid thinking levels for validation
 export const VALID_THINKING_LEVELS = ['low', 'medium', 'high', 'xhigh'] as const;

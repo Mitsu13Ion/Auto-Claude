@@ -103,7 +103,7 @@ export type SessionOutcome =
   | 'auth_failure'     // Authentication error (401)
   | 'cancelled'        // Aborted via AbortSignal
   | 'max_steps'        // Reached maxSteps limit
-  | 'context_window';  // Approaching context window limit (90%), eligible for continuation
+  | 'context_window';  // Hit the conversation rollover threshold, eligible for continuation
 
 /**
  * Result returned when a session finishes (success or failure).

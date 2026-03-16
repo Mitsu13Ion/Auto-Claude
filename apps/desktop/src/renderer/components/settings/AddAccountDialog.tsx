@@ -13,6 +13,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { ModelSearchableSelect } from './ModelSearchableSelect';
 import { useSettingsStore } from '../../stores/settings-store';
 import { useToast } from '../../hooks/use-toast';
 import type { BillingModel, BuiltinProvider, CustomModel, ProviderAccount } from '@shared/types/provider-account';
@@ -56,10 +57,12 @@ export function AddAccountDialog({
   const [region, setRegion] = useState('us-east-1');
   const [isSaving, setIsSaving] = useState(false);
 
-  // Custom models for openai-compatible endpoints
+  // Custom models for provider accounts that support user-discovered model IDs
   const [customModels, setCustomModels] = useState<CustomModel[]>([]);
   const [newModelId, setNewModelId] = useState('');
   const [newModelLabel, setNewModelLabel] = useState('');
+  const [discoveredModelId, setDiscoveredModelId] = useState('');
+  const [discoveredModelLabel, setDiscoveredModelLabel] = useState('');
 
   // OAuth subprocess state
   const [oauthStatus, setOauthStatus] = useState<OAuthStatus>('idle');
@@ -98,6 +101,8 @@ export function AddAccountDialog({
       }
       setNewModelId('');
       setNewModelLabel('');
+      setDiscoveredModelId('');
+      setDiscoveredModelLabel('');
       // Reset OAuth state
       setOauthStatus('idle');
       setOauthEmail(null);
@@ -166,6 +171,9 @@ export function AddAccountDialog({
   const needsBaseUrl = provider === 'ollama' || provider === 'azure' || provider === 'openai-compatible' || provider === 'zai' || (provider === 'anthropic' && authType === 'api-key');
   const needsRegion = provider === 'amazon-bedrock';
   const isBaseUrlRequired = provider === 'ollama' || provider === 'azure' || provider === 'openai-compatible';
+  const supportsDynamicModelDiscovery = provider === 'anthropic' && authType === 'api-key';
+  const canManageCustomModels = provider === 'openai-compatible' || supportsDynamicModelDiscovery;
+  const resolvedDiscoveryBaseUrl = baseUrl.trim() || 'https://api.anthropic.com';
 
   // Auto-save for Anthropic OAuth on success (mirrors the Codex auto-save behavior)
   useEffect(() => {
@@ -414,7 +422,7 @@ export function AddAccountDialog({
         region: needsRegion ? region : undefined,
         claudeProfileId: isOAuthOnly && !isCodexOAuth ? oauthProfileId ?? undefined : undefined,
         email: isOAuthOnly ? (oauthEmail ?? (isEditing ? editAccount?.email : undefined)) : undefined,
-        customModels: provider === 'openai-compatible' && customModels.length > 0 ? customModels : undefined,
+        customModels: customModels.length > 0 ? customModels : undefined,
       };
 
       let result: {
@@ -651,8 +659,8 @@ export function AddAccountDialog({
               </div>
             )}
 
-            {/* Custom Models (openai-compatible) */}
-            {provider === 'openai-compatible' && (
+            {/* Custom Models */}
+            {canManageCustomModels && (
               <div className="space-y-2">
                 <Label>{t('providers.dialog.fields.models')}</Label>
                 <p className="text-xs text-muted-foreground">
@@ -682,62 +690,107 @@ export function AddAccountDialog({
                 )}
 
                 {/* Add new model */}
-                <div className="flex gap-1.5">
-                  <Input
-                    value={newModelId}
-                    onChange={(e) => setNewModelId(e.target.value)}
-                    placeholder={t('providers.dialog.placeholders.modelId')}
-                    className="flex-1 h-8 text-xs"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && newModelId.trim()) {
-                        e.preventDefault();
+                {supportsDynamicModelDiscovery ? (
+                  <div className="space-y-1.5">
+                    <ModelSearchableSelect
+                      value={discoveredModelId}
+                      onChange={(modelId) => {
+                        setDiscoveredModelId(modelId);
+                        setDiscoveredModelLabel('');
+                      }}
+                      onSelectModelInfo={(model) => {
+                        setDiscoveredModelId(model.id);
+                        setDiscoveredModelLabel(model.display_name || model.id);
+                      }}
+                      placeholder={t('modelSelect.placeholder', { defaultValue: 'Select a model' })}
+                      baseUrl={resolvedDiscoveryBaseUrl}
+                      apiKey={apiKey.trim()}
+                      disabled={!apiKey.trim()}
+                    />
+                    {!apiKey.trim() && (
+                      <p className="text-[11px] text-muted-foreground">
+                        {t('providers.dialog.modelsDiscoveryHint')}
+                      </p>
+                    )}
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        disabled={!discoveredModelId.trim() || customModels.some(m => m.id === discoveredModelId.trim())}
+                        onClick={() => {
+                          const id = discoveredModelId.trim();
+                          const label = discoveredModelLabel.trim() || id;
+                          if (id && !customModels.some(m => m.id === id)) {
+                            setCustomModels(prev => [...prev, { id, label }]);
+                          }
+                          setDiscoveredModelId('');
+                          setDiscoveredModelLabel('');
+                        }}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex gap-1.5">
+                    <Input
+                      value={newModelId}
+                      onChange={(e) => setNewModelId(e.target.value)}
+                      placeholder={t('providers.dialog.placeholders.modelId')}
+                      className="flex-1 h-8 text-xs"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && newModelId.trim()) {
+                          e.preventDefault();
+                          const id = newModelId.trim();
+                          const label = newModelLabel.trim() || id;
+                          if (!customModels.some(m => m.id === id)) {
+                            setCustomModels(prev => [...prev, { id, label }]);
+                          }
+                          setNewModelId('');
+                          setNewModelLabel('');
+                        }
+                      }}
+                    />
+                    <Input
+                      value={newModelLabel}
+                      onChange={(e) => setNewModelLabel(e.target.value)}
+                      placeholder={t('providers.dialog.placeholders.modelLabel')}
+                      className="w-28 h-8 text-xs"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && newModelId.trim()) {
+                          e.preventDefault();
+                          const id = newModelId.trim();
+                          const label = newModelLabel.trim() || id;
+                          if (!customModels.some(m => m.id === id)) {
+                            setCustomModels(prev => [...prev, { id, label }]);
+                          }
+                          setNewModelId('');
+                          setNewModelLabel('');
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      disabled={!newModelId.trim()}
+                      onClick={() => {
                         const id = newModelId.trim();
                         const label = newModelLabel.trim() || id;
-                        if (!customModels.some(m => m.id === id)) {
+                        if (id && !customModels.some(m => m.id === id)) {
                           setCustomModels(prev => [...prev, { id, label }]);
                         }
                         setNewModelId('');
                         setNewModelLabel('');
-                      }
-                    }}
-                  />
-                  <Input
-                    value={newModelLabel}
-                    onChange={(e) => setNewModelLabel(e.target.value)}
-                    placeholder={t('providers.dialog.placeholders.modelLabel')}
-                    className="w-28 h-8 text-xs"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && newModelId.trim()) {
-                        e.preventDefault();
-                        const id = newModelId.trim();
-                        const label = newModelLabel.trim() || id;
-                        if (!customModels.some(m => m.id === id)) {
-                          setCustomModels(prev => [...prev, { id, label }]);
-                        }
-                        setNewModelId('');
-                        setNewModelLabel('');
-                      }
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8 shrink-0"
-                    disabled={!newModelId.trim()}
-                    onClick={() => {
-                      const id = newModelId.trim();
-                      const label = newModelLabel.trim() || id;
-                      if (id && !customModels.some(m => m.id === id)) {
-                        setCustomModels(prev => [...prev, { id, label }]);
-                      }
-                      setNewModelId('');
-                      setNewModelLabel('');
-                    }}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
+                      }}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>

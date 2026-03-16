@@ -189,6 +189,8 @@ export class TaskLogWriter {
     const logPhase = phase ? toLogPhase(phase) : this.currentPhase;
     const content = [
       `Session ${metrics.sessionNumber} (${metrics.agentType})`,
+      metrics.modelId ? metrics.modelId : undefined,
+      metrics.thinkingLevel ? metrics.thinkingLevel.toUpperCase() : undefined,
       `${metrics.totalTokens.toLocaleString()} tokens`,
       `${metrics.stepsExecuted} steps`,
       `${metrics.toolCallCount} tools`,

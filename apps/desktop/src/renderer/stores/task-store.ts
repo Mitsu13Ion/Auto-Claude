@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { arrayMove } from '@dnd-kit/sortable';
-import type { Task, TaskStatus, SubtaskStatus, ImplementationPlan, Subtask, TaskMetadata, ExecutionProgress, ExecutionPhase, ReviewReason, TaskDraft, ImageAttachment, TaskOrderState } from '../../shared/types';
+import type { Task, TaskStatus, SubtaskStatus, ImplementationPlan, Subtask, TaskMetadata, ExecutionProgress, ExecutionPhase, ReviewReason, TaskDraft, ImageAttachment, TaskOrderState, IPCResult } from '../../shared/types';
 import { debugLog, debugWarn } from '../../shared/utils/debug-logger';
 import { useProjectStore } from './project-store';
 import { isPausePhase } from '../../shared/constants/phase-protocol';
@@ -802,15 +802,14 @@ export async function submitReview(
   approved: boolean,
   feedback?: string,
   images?: ImageAttachment[]
-): Promise<boolean> {
+): Promise<IPCResult> {
   try {
-    const result = await window.electronAPI.submitReview(taskId, approved, feedback, images);
-    if (result.success) {
-      return true;
-    }
-    return false;
-  } catch {
-    return false;
+    return await window.electronAPI.submitReview(taskId, approved, feedback, images);
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to submit review',
+    };
   }
 }
 

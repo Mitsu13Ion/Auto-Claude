@@ -84,6 +84,7 @@ export const EFFORT_LEVEL_MAP: Record<EffortLevel, string> = {
  */
 export const ADAPTIVE_THINKING_MODELS: ReadonlySet<string> = new Set([
   'claude-opus-4-6',
+  'claude-sonnet-4-6',
 ]);
 
 // ============================================

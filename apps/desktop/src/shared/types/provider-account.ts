@@ -34,7 +34,7 @@ export interface ProviderAccount {
   claudeProfileId?: string;
   usage?: ClaudeUsageData;
   rateLimitEvents?: ClaudeRateLimitEvent[];
-  /** User-configured models for openai-compatible endpoints */
+  /** User-configured models for this provider account */
   customModels?: CustomModel[];
 }
 

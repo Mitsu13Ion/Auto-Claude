@@ -534,6 +534,36 @@ describe('QALoop', () => {
     expect(outcome.approved).toBe(true);
   });
 
+  it('passes human feedback content and referenced images into qa_fixer prompt context', async () => {
+    const generatePrompt = vi.fn().mockResolvedValue('system prompt');
+
+    mockReadFile.mockImplementation((filePath: string) => {
+      if (filePath.endsWith('QA_FIX_REQUEST.md')) {
+        return Promise.resolve(
+          '# QA Fix Request\n\nPlease align the modal spacing.\n\n![Feedback Image](feedback_images/modal-spacing.png)\n'
+        );
+      }
+      if (filePath.endsWith('implementation_plan.json')) {
+        return Promise.resolve(completedPlan('approved'));
+      }
+      return Promise.reject(new Error('ENOENT'));
+    });
+
+    const runSession = vi.fn().mockResolvedValue(makeSessionResult('completed'));
+    const config = makeConfig({ runSession, generatePrompt, maxIterations: 5 });
+    const loop = new QALoop(config);
+    await loop.run();
+
+    expect(generatePrompt).toHaveBeenCalledWith(
+      'qa_fixer',
+      expect.objectContaining({
+        isHumanFeedback: true,
+        humanFeedbackRequest: expect.stringContaining('Please align the modal spacing.'),
+        humanFeedbackImagePaths: [path.join(SPEC_DIR, 'feedback_images/modal-spacing.png')],
+      }),
+    );
+  });
+
   // -------------------------------------------------------------------------
   // Events
   // -------------------------------------------------------------------------

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useProjectStore } from '../../../stores/project-store';
 import { useSettingsStore } from '../../../stores/settings-store';
 import { checkTaskRunning, isIncompleteHumanReview, isPausedTask, getTaskProgress, useTaskStore, loadTasks, hasRecentActivity } from '../../../stores/task-store';
-import type { Task, TaskLogs, TaskLogPhase, WorktreeStatus, WorktreeDiff, MergeConflict, MergeStats, GitConflictInfo, ImageAttachment } from '../../../../shared/types';
+import type { Task, TaskLogs, TaskLogPhase, TaskPhaseLog, WorktreeStatus, WorktreeDiff, MergeConflict, MergeStats, GitConflictInfo, ImageAttachment } from '../../../../shared/types';
 
 /**
  * Validates task subtasks structure to prevent infinite loops during resume.
@@ -45,6 +45,94 @@ function validateTaskSubtasks(task: Task): boolean {
   return true;
 }
 
+const PHASE_LOG_PAGE_SIZE = 200;
+
+function normalizePhaseLogWindow(phaseLog: TaskPhaseLog): TaskPhaseLog {
+  const totalEntries = phaseLog.totalEntries ?? phaseLog.entries.length;
+  const visibleStartIndex = phaseLog.visibleStartIndex ?? Math.max(0, totalEntries - phaseLog.entries.length);
+  const visibleEndIndex = phaseLog.visibleEndIndex ?? Math.min(totalEntries, visibleStartIndex + phaseLog.entries.length);
+
+  return {
+    ...phaseLog,
+    totalEntries,
+    visibleStartIndex,
+    visibleEndIndex,
+    hasOlderEntries: phaseLog.hasOlderEntries ?? visibleStartIndex > 0,
+  };
+}
+
+function mergePhaseLogWindow(existing: TaskPhaseLog | undefined, incoming: TaskPhaseLog): TaskPhaseLog {
+  const next = normalizePhaseLogWindow(incoming);
+  if (!existing) {
+    return next;
+  }
+
+  const previous = normalizePhaseLogWindow(existing);
+  const previousStart = previous.visibleStartIndex ?? 0;
+  const previousEnd = previous.visibleEndIndex ?? previous.entries.length;
+  const nextStart = next.visibleStartIndex ?? 0;
+  const nextEnd = next.visibleEndIndex ?? next.entries.length;
+
+  if (previousStart < nextStart && nextStart <= previousEnd) {
+    const prefixLength = Math.max(0, Math.min(previous.entries.length, nextStart - previousStart));
+    const prefixEntries = previous.entries.slice(0, prefixLength);
+    return normalizePhaseLogWindow({
+      ...next,
+      entries: [...prefixEntries, ...next.entries],
+      visibleStartIndex: previousStart,
+      visibleEndIndex: nextEnd,
+      totalEntries: next.totalEntries ?? previous.totalEntries,
+      hasOlderEntries: previousStart > 0,
+    });
+  }
+
+  return next;
+}
+
+function prependPhaseLogWindow(existing: TaskPhaseLog | undefined, olderWindow: TaskPhaseLog): TaskPhaseLog {
+  const older = normalizePhaseLogWindow(olderWindow);
+  if (!existing) {
+    return older;
+  }
+
+  const current = normalizePhaseLogWindow(existing);
+  const currentStart = current.visibleStartIndex ?? 0;
+  const olderStart = older.visibleStartIndex ?? 0;
+  const olderEnd = older.visibleEndIndex ?? older.entries.length;
+
+  if (olderStart > currentStart) {
+    return current;
+  }
+
+  const overlapCount = Math.max(0, olderEnd - currentStart);
+  const prefixLength = Math.max(0, older.entries.length - overlapCount);
+  const prefixEntries = older.entries.slice(0, prefixLength);
+
+  return normalizePhaseLogWindow({
+    ...current,
+    entries: [...prefixEntries, ...current.entries],
+    totalEntries: older.totalEntries ?? current.totalEntries,
+    visibleStartIndex: olderStart,
+    visibleEndIndex: current.visibleEndIndex,
+    hasOlderEntries: older.hasOlderEntries ?? olderStart > 0,
+  });
+}
+
+function mergeTaskLogs(existing: TaskLogs | null, incoming: TaskLogs): TaskLogs {
+  if (!existing) {
+    return incoming;
+  }
+
+  return {
+    ...incoming,
+    phases: {
+      planning: mergePhaseLogWindow(existing.phases.planning, incoming.phases.planning),
+      coding: mergePhaseLogWindow(existing.phases.coding, incoming.phases.coding),
+      validation: mergePhaseLogWindow(existing.phases.validation, incoming.phases.validation),
+    },
+  };
+}
+
 export interface UseTaskDetailOptions {
   task: Task;
 }
@@ -79,6 +167,7 @@ export function useTaskDetail({ task }: UseTaskDetailOptions) {
   const [phaseLogs, setPhaseLogs] = useState<TaskLogs | null>(null);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   const [expandedPhases, setExpandedPhases] = useState<Set<TaskLogPhase>>(new Set());
+  const [loadingOlderPhases, setLoadingOlderPhases] = useState<Set<TaskLogPhase>>(new Set());
   const [isLoadingPlan, setIsLoadingPlan] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsContainerRef = useRef<HTMLDivElement>(null);
@@ -231,6 +320,7 @@ export function useTaskDetail({ task }: UseTaskDetailOptions) {
         const result = await window.electronAPI.getTaskLogs(currentProject.id, task.specId);
         if (result.success && result.data) {
           setPhaseLogs(result.data);
+          setLoadingOlderPhases(new Set());
           // Auto-expand active phase
           const activePhase = (['planning', 'coding', 'validation'] as TaskLogPhase[]).find(
             phase => result.data?.phases[phase]?.status === 'active'
@@ -254,7 +344,7 @@ export function useTaskDetail({ task }: UseTaskDetailOptions) {
     // Listen for log changes
     const unsubscribe = window.electronAPI.onTaskLogsChanged((specId, logs) => {
       if (specId === task.specId) {
-        setPhaseLogs(logs);
+        setPhaseLogs(prev => mergeTaskLogs(prev, logs));
         // Auto-expand newly active phase
         const activePhase = (['planning', 'coding', 'validation'] as TaskLogPhase[]).find(
           phase => logs.phases[phase]?.status === 'active'
@@ -274,6 +364,60 @@ export function useTaskDetail({ task }: UseTaskDetailOptions) {
       window.electronAPI.unwatchTaskLogs(task.specId);
     };
   }, [currentProject, task.specId]);
+
+  const loadOlderPhaseLogs = useCallback(async (phase: TaskLogPhase) => {
+    if (!currentProject || !phaseLogs) {
+      return;
+    }
+
+    const phaseLog = phaseLogs.phases[phase];
+    const beforeIndex = phaseLog?.visibleStartIndex ?? 0;
+
+    if (!phaseLog?.hasOlderEntries || beforeIndex <= 0) {
+      return;
+    }
+
+    setLoadingOlderPhases(prev => {
+      const next = new Set(prev);
+      next.add(phase);
+      return next;
+    });
+
+    try {
+      const result = await window.electronAPI.getTaskLogPhase(
+        currentProject.id,
+        task.specId,
+        phase,
+        beforeIndex,
+        PHASE_LOG_PAGE_SIZE
+      );
+
+      if (result.success && result.data) {
+        const olderWindow = result.data;
+        setPhaseLogs(prev => {
+          if (!prev) {
+            return prev;
+          }
+
+          return {
+            ...prev,
+            phases: {
+              ...prev.phases,
+              [phase]: prependPhaseLogWindow(prev.phases[phase], olderWindow),
+            },
+          };
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load older phase logs:', err);
+    } finally {
+      setLoadingOlderPhases(prev => {
+        const next = new Set(prev);
+        next.delete(phase);
+        return next;
+      });
+    }
+  }, [currentProject, phaseLogs, task.specId]);
 
   // Toggle phase expansion
   const togglePhase = useCallback((phase: TaskLogPhase) => {
@@ -527,6 +671,7 @@ export function useTaskDetail({ task }: UseTaskDetailOptions) {
     phaseLogs,
     isLoadingLogs,
     expandedPhases,
+    loadingOlderPhases,
     logsEndRef,
     logsContainerRef,
     selectedProject: currentProject,
@@ -574,6 +719,7 @@ export function useTaskDetail({ task }: UseTaskDetailOptions) {
     setPhaseLogs,
     setIsLoadingLogs,
     setExpandedPhases,
+    setLoadingOlderPhases,
     setMergePreview,
     setIsLoadingPreview,
     setShowConflictDialog,
@@ -583,6 +729,7 @@ export function useTaskDetail({ task }: UseTaskDetailOptions) {
     // Handlers
     handleLogsScroll,
     togglePhase,
+    loadOlderPhaseLogs,
     loadMergePreview,
     addFeedbackImage,
     addFeedbackImages,

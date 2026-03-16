@@ -1,12 +1,65 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { IPC_CHANNELS, getSpecsDir } from '../../../shared/constants';
-import type { IPCResult, TaskLogs, TaskLogStreamChunk } from '../../../shared/types';
+import type { IPCResult, TaskLogs, TaskLogPhase, TaskLogStreamChunk, TaskPhaseLog } from '../../../shared/types';
 import path from 'path';
 import { projectStore } from '../../project-store';
 import { taskLogService } from '../../task-log-service';
 import { isValidTaskId } from '../../utils/spec-path-helpers';
 import { debugLog } from '../../../shared/utils/debug-logger';
 import { ensureAbsolutePath } from '../../utils/path-helpers';
+
+const DEFAULT_RECENT_LOG_ENTRY_LIMIT = 200;
+const DEFAULT_PHASE_LOG_PAGE_SIZE = 200;
+
+function buildPhaseWindow(phaseLog: TaskPhaseLog, startIndex: number, endIndex: number): TaskPhaseLog {
+  const totalEntries = phaseLog.entries.length;
+  const safeStartIndex = Math.max(0, Math.min(startIndex, totalEntries));
+  const safeEndIndex = Math.max(safeStartIndex, Math.min(endIndex, totalEntries));
+
+  return {
+    ...phaseLog,
+    entries: phaseLog.entries.slice(safeStartIndex, safeEndIndex),
+    totalEntries,
+    visibleStartIndex: safeStartIndex,
+    visibleEndIndex: safeEndIndex,
+    hasOlderEntries: safeStartIndex > 0,
+  };
+}
+
+function getPhaseWindow(
+  phaseLog: TaskPhaseLog,
+  beforeIndex?: number,
+  limit = DEFAULT_PHASE_LOG_PAGE_SIZE
+): TaskPhaseLog {
+  const totalEntries = phaseLog.entries.length;
+  const safeLimit = Math.max(1, limit);
+  const endIndex = beforeIndex === undefined
+    ? totalEntries
+    : Math.max(0, Math.min(beforeIndex, totalEntries));
+  const startIndex = Math.max(0, endIndex - safeLimit);
+
+  return buildPhaseWindow(phaseLog, startIndex, endIndex);
+}
+
+function getRecentPhaseWindow(phaseLog: TaskPhaseLog, limit = DEFAULT_RECENT_LOG_ENTRY_LIMIT): TaskPhaseLog {
+  const totalEntries = phaseLog.entries.length;
+  if (totalEntries <= limit) {
+    return phaseLog;
+  }
+
+  return buildPhaseWindow(phaseLog, totalEntries - limit, totalEntries);
+}
+
+function sliceTaskLogs(logs: TaskLogs, limit = DEFAULT_RECENT_LOG_ENTRY_LIMIT): TaskLogs {
+  return {
+    ...logs,
+    phases: {
+      planning: getRecentPhaseWindow(logs.phases.planning, limit),
+      coding: getRecentPhaseWindow(logs.phases.coding, limit),
+      validation: getRecentPhaseWindow(logs.phases.validation, limit),
+    },
+  };
+}
 
 /**
  * Register task logs handlers
@@ -58,12 +111,60 @@ export function registerTaskLogsHandlers(getMainWindow: () => BrowserWindow | nu
           } : null
         });
 
-        return { success: true, data: logs };
+        return { success: true, data: logs ? sliceTaskLogs(logs) : null };
       } catch (error) {
         console.error('[TASK_LOGS_GET] Failed to get task logs:', error);
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Failed to get task logs'
+        };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.TASK_LOGS_GET_PHASE,
+    async (
+      _,
+      projectId: string,
+      specId: string,
+      phase: TaskLogPhase,
+      beforeIndex?: number,
+      limit?: number
+    ): Promise<IPCResult<TaskPhaseLog | null>> => {
+      try {
+        if (!isValidTaskId(specId)) {
+          return { success: false, error: 'Invalid spec ID' };
+        }
+
+        if (!['planning', 'coding', 'validation'].includes(phase)) {
+          return { success: false, error: 'Invalid log phase' };
+        }
+
+        const project = projectStore.getProject(projectId);
+        if (!project) {
+          console.error('[TASK_LOGS_GET_PHASE] Project not found:', projectId);
+          return { success: false, error: 'Project not found' };
+        }
+
+        const absoluteProjectPath = ensureAbsolutePath(project.path);
+        const specsRelPath = getSpecsDir(project.autoBuildPath);
+        const specDir = path.join(absoluteProjectPath, specsRelPath, specId);
+        const logs = taskLogService.loadLogs(specDir, absoluteProjectPath, specsRelPath, specId);
+
+        if (!logs) {
+          return { success: true, data: null };
+        }
+
+        return {
+          success: true,
+          data: getPhaseWindow(logs.phases[phase], beforeIndex, limit),
+        };
+      } catch (error) {
+        console.error('[TASK_LOGS_GET_PHASE] Failed to get task phase logs:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to get task phase logs'
         };
       }
     }
@@ -141,7 +242,7 @@ export function registerTaskLogsHandlers(getMainWindow: () => BrowserWindow | nu
   taskLogService.on('logs-changed', (specId: string, logs: TaskLogs) => {
     const mainWindow = getMainWindow();
     if (mainWindow) {
-      mainWindow.webContents.send(IPC_CHANNELS.TASK_LOGS_CHANGED, specId, logs);
+      mainWindow.webContents.send(IPC_CHANNELS.TASK_LOGS_CHANGED, specId, sliceTaskLogs(logs));
     }
   });
 

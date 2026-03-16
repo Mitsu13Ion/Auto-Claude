@@ -103,6 +103,10 @@ export interface QAPromptContext {
   maxIterations: number;
   /** Whether processing human feedback */
   isHumanFeedback?: boolean;
+  /** Snapshot of QA_FIX_REQUEST.md when human feedback is present */
+  humanFeedbackRequest?: string;
+  /** Resolved absolute image paths referenced by QA_FIX_REQUEST.md */
+  humanFeedbackImagePaths?: string[];
   /** Previous error context for self-correction */
   previousError?: QAErrorContext;
 }
@@ -173,6 +177,11 @@ interface QASignoff {
   qa_session?: number;
   tests_passed?: Record<string, string>;
   issues_found?: QAIssue[];
+}
+
+interface HumanFeedbackContext {
+  requestContent: string;
+  imagePaths: string[];
 }
 
 function issueTitle(issue: QAIssue): string {
@@ -515,11 +524,14 @@ export class QALoop extends EventEmitter {
     this.emitTyped('log', 'Human feedback detected — running QA Fixer first');
     this.emitTyped('qa-fix-start', 0);
     this.sessionNumber++;
+    const humanFeedback = await this.readHumanFeedbackContext();
 
     const fixPrompt = await this.config.generatePrompt('qa_fixer', {
       iteration: 0,
       maxIterations: this.config.maxIterations ?? MAX_QA_ITERATIONS,
       isHumanFeedback: true,
+      humanFeedbackRequest: humanFeedback?.requestContent,
+      humanFeedbackImagePaths: humanFeedback?.imagePaths,
     });
 
     const result = await this.config.runSession({
@@ -544,6 +556,37 @@ export class QALoop extends EventEmitter {
     }
 
     this.emitTyped('qa-fix-complete', 0);
+  }
+
+  private async readHumanFeedbackContext(): Promise<HumanFeedbackContext | null> {
+    try {
+      const requestContent = await readFile(join(this.config.specDir, 'QA_FIX_REQUEST.md'), 'utf-8');
+      const imagePaths = this.extractHumanFeedbackImagePaths(requestContent);
+      return { requestContent, imagePaths };
+    } catch {
+      return null;
+    }
+  }
+
+  private extractHumanFeedbackImagePaths(requestContent: string): string[] {
+    const imagePaths = new Set<string>();
+    const imageReferenceRegex = /!\[[^\]]*]\(([^)]+)\)/g;
+
+    let match: RegExpExecArray | null;
+    while ((match = imageReferenceRegex.exec(requestContent)) !== null) {
+      const rawPath = match[1]?.trim();
+      if (!rawPath) {
+        continue;
+      }
+
+      const resolvedPath = rawPath.startsWith('/')
+        ? rawPath
+        : join(this.config.specDir, rawPath);
+
+      imagePaths.add(resolvedPath);
+    }
+
+    return [...imagePaths];
   }
 
   // ===========================================================================

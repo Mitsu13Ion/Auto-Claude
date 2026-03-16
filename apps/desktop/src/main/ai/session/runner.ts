@@ -55,6 +55,9 @@ const CONTEXT_WINDOW_THRESHOLD = 0.85;
 /** Context window usage threshold (90%) for hard abort — triggers continuation */
 const CONTEXT_WINDOW_ABORT_THRESHOLD = 0.90;
 
+/** Absolute rollover cap for large-context models. */
+const LARGE_CONTEXT_WINDOW_ROLLOVER_CAP = 600_000;
+
 /** Unique reason string for context-window aborts (used in catch to distinguish from user cancel) */
 const CONTEXT_WINDOW_ABORT_REASON = '__context_window_exhausted__';
 
@@ -77,6 +80,27 @@ const POST_STREAM_TIMEOUT_MS = 10_000;
  *  Protects against providers that accept the request but never send data
  *  (observed with OpenAI Codex via chatgpt.com/backend-api/codex/responses). */
 const STREAM_INACTIVITY_TIMEOUT_MS = 60_000;
+
+function getRolloverWindowLimit(contextWindowLimit: number): number {
+  if (contextWindowLimit <= 0) return 0;
+  return contextWindowLimit > LARGE_CONTEXT_WINDOW_ROLLOVER_CAP
+    ? LARGE_CONTEXT_WINDOW_ROLLOVER_CAP
+    : contextWindowLimit;
+}
+
+function getContextWindowAbortLimit(contextWindowLimit: number): number {
+  const rolloverWindowLimit = getRolloverWindowLimit(contextWindowLimit);
+  if (rolloverWindowLimit <= 0) return 0;
+  return rolloverWindowLimit >= LARGE_CONTEXT_WINDOW_ROLLOVER_CAP
+    ? LARGE_CONTEXT_WINDOW_ROLLOVER_CAP
+    : Math.floor(rolloverWindowLimit * CONTEXT_WINDOW_ABORT_THRESHOLD);
+}
+
+function getContextWindowWarningLimit(contextWindowLimit: number): number {
+  const rolloverWindowLimit = getRolloverWindowLimit(contextWindowLimit);
+  if (rolloverWindowLimit <= 0) return 0;
+  return Math.floor(rolloverWindowLimit * CONTEXT_WINDOW_THRESHOLD);
+}
 
 // =============================================================================
 // Runner Options
@@ -279,6 +303,9 @@ async function executeStream(
 
   // Context window guard: track prompt tokens per step
   const contextWindowLimit = config.contextWindowLimit ?? 0;
+  const rolloverWindowLimit = getRolloverWindowLimit(contextWindowLimit);
+  const contextWindowWarningLimit = getContextWindowWarningLimit(contextWindowLimit);
+  const contextWindowAbortLimit = getContextWindowAbortLimit(contextWindowLimit);
   let lastPromptTokens = 0;
   let contextWindowWarningInjected = false;
 
@@ -390,7 +417,8 @@ async function executeStream(
       if (
         contextWindowLimit > 0 &&
         lastPromptTokens > 0 &&
-        lastPromptTokens > contextWindowLimit * CONTEXT_WINDOW_ABORT_THRESHOLD
+        contextWindowAbortLimit > 0 &&
+        lastPromptTokens > contextWindowAbortLimit
       ) {
         contextWindowAbortController.abort(CONTEXT_WINDOW_ABORT_REASON);
         return {};
@@ -404,12 +432,15 @@ async function executeStream(
         contextWindowLimit > 0 &&
         lastPromptTokens > 0 &&
         !contextWindowWarningInjected &&
-        lastPromptTokens > contextWindowLimit * CONTEXT_WINDOW_THRESHOLD
+        contextWindowWarningLimit > 0 &&
+        lastPromptTokens > contextWindowWarningLimit
       ) {
         contextWindowWarningInjected = true;
-        const usagePct = Math.round((lastPromptTokens / contextWindowLimit) * 100);
+        const usagePct = rolloverWindowLimit > 0
+          ? Math.round((lastPromptTokens / rolloverWindowLimit) * 100)
+          : 0;
         systemParts.push(
-          `WARNING: You are approaching the context window limit (${usagePct}% used, ${lastPromptTokens.toLocaleString()} of ${contextWindowLimit.toLocaleString()} tokens). ` +
+          `WARNING: You are approaching the conversation rollover limit (${usagePct}% used, ${lastPromptTokens.toLocaleString()} of ${rolloverWindowLimit.toLocaleString()} tokens). ` +
           `Complete your current task and commit progress immediately. Do not start new subtasks.`,
         );
       }

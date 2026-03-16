@@ -64,7 +64,7 @@ describe('TaskLogWriter', () => {
       completionTokens: 300,
       totalTokens: 1500,
       cumulativeTokens: 1500,
-      budgetLimitTokens: 900000,
+      budgetLimitTokens: 10000000,
     }, 'planning');
     writer.endPhase('planning', true);
 
@@ -83,7 +83,7 @@ describe('TaskLogWriter', () => {
           type: 'metrics',
           metrics: expect.objectContaining({
             totalTokens: 1500,
-            budgetLimitTokens: 900000,
+            budgetLimitTokens: 10000000,
           }),
         }),
       ]),

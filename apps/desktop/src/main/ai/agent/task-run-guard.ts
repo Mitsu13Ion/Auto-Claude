@@ -20,7 +20,7 @@ export interface TaskRunSummary {
 }
 
 export const DEFAULT_TASK_RUN_BUDGET: TaskRunBudget = {
-  maxTotalTokens: 900_000,
+  maxTotalTokens: 10_000_000,
   maxSessions: 24,
   maxContinuations: 8,
 };
@@ -51,6 +51,11 @@ export class TaskRunGuard {
     phase: Phase,
     sessionNumber: number,
     result: SessionResult,
+    runtime?: {
+      provider?: string;
+      modelId?: string;
+      thinkingLevel?: string;
+    },
   ): string | null {
     this.sessions += 1;
     this.stepsExecuted += result.stepsExecuted;
@@ -61,6 +66,9 @@ export class TaskRunGuard {
     const metrics: TaskRunMetrics = {
       agentType,
       sessionNumber,
+      provider: runtime?.provider,
+      modelId: runtime?.modelId,
+      thinkingLevel: runtime?.thinkingLevel,
       stepsExecuted: result.stepsExecuted,
       toolCallCount: result.toolCallCount,
       continuationCount: result.continuationCount ?? 0,

@@ -71,6 +71,9 @@ export type TaskLogEntryType = 'text' | 'tool_start' | 'tool_end' | 'phase_start
 export interface TaskRunMetrics {
   agentType: string;
   sessionNumber: number;
+  provider?: string;
+  modelId?: string;
+  thinkingLevel?: string;
   stepsExecuted: number;
   toolCallCount: number;
   continuationCount: number;
@@ -107,6 +110,10 @@ export interface TaskPhaseLog {
   started_at: string | null;
   completed_at: string | null;
   entries: TaskLogEntry[];
+  totalEntries?: number;
+  visibleStartIndex?: number;
+  visibleEndIndex?: number;
+  hasOlderEntries?: boolean;
 }
 
 export interface TaskLogs {

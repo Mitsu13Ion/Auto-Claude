@@ -96,7 +96,7 @@ describe('TaskLogs error helpers', () => {
         promptTokens: 1200,
         completionTokens: 300,
         totalTokens: 1500,
-        budgetLimitTokens: 900000,
+        budgetLimitTokens: 10000000,
       },
     });
     phaseLogs.phases.coding.entries.push({
@@ -113,7 +113,7 @@ describe('TaskLogs error helpers', () => {
         promptTokens: 4000,
         completionTokens: 1000,
         totalTokens: 5000,
-        budgetLimitTokens: 900000,
+        budgetLimitTokens: 10000000,
       },
     });
 
@@ -125,7 +125,7 @@ describe('TaskLogs error helpers', () => {
       promptTokens: 5200,
       completionTokens: 1300,
       totalTokens: 6500,
-      budgetLimitTokens: 900000,
+      budgetLimitTokens: 10000000,
     });
   });
 });

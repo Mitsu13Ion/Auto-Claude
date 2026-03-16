@@ -312,4 +312,23 @@ describe('runAgentSession', () => {
     const callArgs = mockStreamText.mock.calls[0][0];
     expect(callArgs.stopWhen).toEqual({ type: 'stepCount', count: 500 });
   });
+
+  it('should roll over at 600k for large context windows', async () => {
+    mockStreamText.mockImplementation((options: { prepareStep?: (args: { stepNumber: number }) => Promise<Record<string, unknown>> }) => ({
+      fullStream: (async function* () {
+        yield {
+          type: 'finish-step',
+          usage: { promptTokens: 600_001, completionTokens: 10 },
+        };
+        await options.prepareStep?.({ stepNumber: 2 });
+        throw new DOMException('aborted', 'AbortError');
+      })(),
+      text: Promise.resolve(''),
+      totalUsage: Promise.resolve({ inputTokens: 600_001, outputTokens: 10 }),
+    }));
+
+    const result = await runAgentSession(createMockConfig({ contextWindowLimit: 1_000_000 }));
+
+    expect(result.outcome).toBe('context_window');
+  });
 });

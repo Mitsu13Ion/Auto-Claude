@@ -20,6 +20,19 @@ function formatContextWindow(size: number): string {
   return `${(size / 1000).toFixed(0)}K`;
 }
 
+function getCanonicalModelKey(provider: BuiltinProvider, modelValue: string): string {
+  if (provider === 'ollama') return modelValue;
+  if (provider === 'anthropic' && modelValue.startsWith('claude-')) return modelValue;
+  return resolveModelEquivalent(modelValue, provider)?.modelId ?? modelValue;
+}
+
+function preferConcreteModel(current: ModelOption, incoming: ModelOption): ModelOption {
+  const currentIsConcrete = current.value.startsWith('claude-');
+  const incomingIsConcrete = incoming.value.startsWith('claude-');
+  if (incomingIsConcrete && !currentIsConcrete) return incoming;
+  return current;
+}
+
 export function MultiProviderModelSelect({ value, onChange, className, filterProvider }: MultiProviderModelSelectProps) {
   const { t } = useTranslation(['settings']);
   const [open, setOpen] = useState(false);
@@ -86,7 +99,7 @@ export function MultiProviderModelSelect({ value, onChange, className, filterPro
     return hasOAuth && hasApiKey;
   }, [providerAccounts]);
 
-  // Group models by provider, including custom models from openai-compatible accounts
+  // Group models by provider, including any account-level custom models
   const groupedModels = useMemo(() => {
     const groups = new Map<BuiltinProvider, ModelOption[]>();
     for (const model of ALL_AVAILABLE_MODELS) {
@@ -95,28 +108,33 @@ export function MultiProviderModelSelect({ value, onChange, className, filterPro
       // Hide apiKeyOnly OpenAI models when all OpenAI accounts are OAuth (Codex subscription)
       if (model.apiKeyOnly && model.provider === 'openai' && openaiIsOAuthOnly) continue;
       if (!groups.has(model.provider)) groups.set(model.provider, []);
-      groups.get(model.provider)!.push(model);
+      const providerGroup = groups.get(model.provider)!;
+      const canonicalKey = getCanonicalModelKey(model.provider, model.value);
+      const existingIndex = providerGroup.findIndex(
+        (entry) => getCanonicalModelKey(model.provider, entry.value) === canonicalKey
+      );
+      if (existingIndex === -1) {
+        providerGroup.push(model);
+      } else {
+        providerGroup[existingIndex] = preferConcreteModel(providerGroup[existingIndex], model);
+      }
     }
 
-    // Merge user-configured custom models from openai-compatible accounts
-    if (!filterProvider || filterProvider === 'openai-compatible') {
-      const customAccounts = providerAccounts.filter(
-        a => a.provider === 'openai-compatible' && a.customModels?.length
-      );
-      for (const account of customAccounts) {
-        for (const cm of account.customModels!) {
-          // Avoid duplicates — skip if already present
-          const existing = groups.get('openai-compatible');
-          if (existing?.some(m => m.value === cm.id)) continue;
-          if (!groups.has('openai-compatible')) groups.set('openai-compatible', []);
-          groups.get('openai-compatible')!.push({
-            value: cm.id,
-            label: cm.label,
-            provider: 'openai-compatible',
-            description: account.name,
-            capabilities: { thinking: false, tools: true, vision: false, contextWindow: 128000 },
-          });
-        }
+    for (const account of providerAccounts) {
+      if (!account.customModels?.length) continue;
+      if (filterProvider && account.provider !== filterProvider) continue;
+
+      if (!groups.has(account.provider)) groups.set(account.provider, []);
+      const providerGroup = groups.get(account.provider)!;
+
+      for (const customModel of account.customModels) {
+        if (providerGroup.some(model => model.value === customModel.id)) continue;
+        providerGroup.push({
+          value: customModel.id,
+          label: customModel.label,
+          provider: account.provider,
+          description: account.name,
+        });
       }
     }
 

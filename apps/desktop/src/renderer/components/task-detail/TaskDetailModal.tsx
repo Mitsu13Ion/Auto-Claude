@@ -161,8 +161,16 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
       return;
     }
     state.setIsSubmitting(true);
-    await submitReview(task.id, false, state.feedback, state.feedbackImages);
+    const result = await submitReview(task.id, false, state.feedback, state.feedbackImages);
     state.setIsSubmitting(false);
+    if (!result.success) {
+      toast({
+        title: 'Failed to submit QA feedback',
+        description: result.error || 'The task was not resumed. Your feedback is still in the form.',
+        variant: 'destructive',
+      });
+      return;
+    }
     state.setFeedback('');
     state.setFeedbackImages([]);
   };
@@ -635,11 +643,13 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                     phaseLogs={state.phaseLogs}
                     isLoadingLogs={state.isLoadingLogs}
                     expandedPhases={state.expandedPhases}
+                    loadingOlderPhases={state.loadingOlderPhases}
                     isStuck={state.isStuck}
                     logsEndRef={state.logsEndRef}
                     logsContainerRef={state.logsContainerRef}
                     onLogsScroll={state.handleLogsScroll}
                     onTogglePhase={state.togglePhase}
+                    onLoadOlderPhase={state.loadOlderPhaseLogs}
                   />
                 </TabsContent>
 

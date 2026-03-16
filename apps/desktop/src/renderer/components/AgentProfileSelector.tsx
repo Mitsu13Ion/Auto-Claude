@@ -10,6 +10,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useActiveProvider } from '../hooks/useActiveProvider';
+import { useSettingsStore } from '../stores/settings-store';
 import { getProviderModelLabel } from '../../shared/utils/model-display';
 import { Brain, Scale, Zap, Sliders, Sparkles, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
 import { Label } from './ui/label';
@@ -72,6 +73,16 @@ const PHASE_LABEL_KEYS: Record<keyof PhaseModelConfig, { label: string; descript
   qa: { label: 'agentProfile.phases.qa.label', description: 'agentProfile.phases.qa.description' }
 };
 
+function getCanonicalAnthropicModelKey(modelValue: string): string {
+  if (modelValue.startsWith('claude-')) return modelValue;
+  return modelValue === 'opus' ? 'claude-opus-4-6'
+    : modelValue === 'opus-1m' ? 'claude-opus-4-6'
+    : modelValue === 'sonnet' ? 'claude-sonnet-4-6'
+    : modelValue === 'haiku' ? 'claude-haiku-4-5-20251001'
+    : modelValue === 'opus-4.5' ? 'claude-opus-4-5-20251101'
+    : modelValue;
+}
+
 export function AgentProfileSelector({
   profileId,
   model,
@@ -87,6 +98,7 @@ export function AgentProfileSelector({
 }: AgentProfileSelectorProps) {
   const { t } = useTranslation('settings');
   const { provider: activeProvider } = useActiveProvider();
+  const providerAccounts = useSettingsStore((state) => state.providerAccounts);
   const [showPhaseDetails, setShowPhaseDetails] = useState(false);
 
   // Ollama models are user-installed — fetch dynamically from the local server
@@ -124,21 +136,58 @@ export function AgentProfileSelector({
   const currentPhaseModels = phaseModels || DEFAULT_PHASE_MODELS;
   const currentPhaseThinking = phaseThinking || DEFAULT_PHASE_THINKING;
 
+  const customProviderModels = useMemo(() => {
+    if (!activeProvider) return [];
+
+    const discoveredModels = new Map<string, string>();
+    for (const account of providerAccounts) {
+      if (account.provider !== activeProvider || !account.customModels?.length) continue;
+      for (const customModel of account.customModels) {
+        if (!discoveredModels.has(customModel.id)) {
+          discoveredModels.set(customModel.id, customModel.label);
+        }
+      }
+    }
+
+    return Array.from(discoveredModels.entries()).map(([value, label]) => ({ value, label }));
+  }, [activeProvider, providerAccounts]);
+
   // Build model options filtered to the active provider (falls back to Anthropic models)
   const phaseModelOptions = useMemo(() => {
-    if (!activeProvider || activeProvider === 'anthropic') {
-      return AVAILABLE_MODELS.map(m => ({ value: m.value, label: m.label }));
+    const mergeUniqueModels = (baseModels: Array<{ value: string; label: string }>) => {
+      const merged = [...baseModels];
+      for (const customModel of customProviderModels) {
+        if (!merged.some(model => model.value === customModel.value)) {
+          merged.push(customModel);
+        }
+      }
+      return merged;
+    };
+
+    if (!activeProvider) {
+      return mergeUniqueModels(AVAILABLE_MODELS.map(m => ({ value: m.value, label: m.label })));
+    }
+    if (activeProvider === 'anthropic') {
+      const dedupedAnthropicModels = new Map<string, { value: string; label: string }>();
+      for (const model of ALL_AVAILABLE_MODELS.filter((entry) => entry.provider === 'anthropic')) {
+        const canonicalKey = getCanonicalAnthropicModelKey(model.value);
+        const existing = dedupedAnthropicModels.get(canonicalKey);
+        if (!existing || (model.value.startsWith('claude-') && !existing.value.startsWith('claude-'))) {
+          dedupedAnthropicModels.set(canonicalKey, { value: model.value, label: model.label });
+        }
+      }
+      return mergeUniqueModels(Array.from(dedupedAnthropicModels.values()));
     }
     // Ollama: use dynamically fetched installed models
     if (activeProvider === 'ollama' && ollamaModels.length > 0) {
-      return ollamaModels;
+      return mergeUniqueModels(ollamaModels);
     }
     const providerModels = ALL_AVAILABLE_MODELS.filter(m => m.provider === activeProvider);
     if (providerModels.length === 0) {
-      return AVAILABLE_MODELS.map(m => ({ value: m.value, label: m.label }));
+      return mergeUniqueModels(AVAILABLE_MODELS.map(m => ({ value: m.value, label: m.label })));
     }
-    return providerModels.map(m => ({ value: m.value, label: m.label }));
-  }, [activeProvider, ollamaModels]);
+    return mergeUniqueModels(providerModels.map(m => ({ value: m.value, label: m.label })));
+  }, [activeProvider, customProviderModels, ollamaModels]);
 
   const handleProfileSelect = (selectedId: string) => {
     if (selectedId === 'custom') {
